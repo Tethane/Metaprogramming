@@ -5,3 +5,5 @@
 #include "include/lc/eval.hpp"
 #include "include/lc/std.hpp"
 #include "include/lc/runtime.hpp"
+#include "include/lc/lisp.hpp"
+#include "include/lc/pretty.hpp"

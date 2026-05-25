@@ -51,4 +51,10 @@ int main() {
 
     std::cout << "map lookup \"answer\": " << lc::to_int_v<lc::MapLookupAnswer> << "\n";
     std::cout << "map contains \"lucky\": " << (lc::to_bool_v<lc::MapContainsLucky> ? "true" : "false") << "\n";
+
+    std::cout << "lisp closure program: " << lc::pretty_string_view_v<lc::LispClosureProgram> << "\n";
+    std::cout << "lisp closure result: " << lc::to_int_v<lc::LispClosureResult> << "\n";
+    std::cout << "lisp closure type: " << lc::pretty_string_view_v<lc::LispClosureResultType> << "\n";
+    std::cout << "lisp string result: " << lc::to_string_view_v<lc::LispStringResult> << "\n";
+    std::cout << "core lambda identity pretty: " << lc::pretty_string_view_v<lc::I> << "\n";
 }

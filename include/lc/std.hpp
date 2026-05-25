@@ -1,6 +1,6 @@
 #pragma once
 
-#include "eval.hpp"
+#include "lisp.hpp"
 
 namespace lc {
 
@@ -95,10 +95,46 @@ using SetSizeExample = Normalize_t<Apply_t<SetSize, UnionSetExample>>;
 using KeyAnswer = String<'a', 'n', 's', 'w', 'e', 'r'>;
 using KeyLucky = String<'l', 'u', 'c', 'k', 'y'>;
 using ExampleMapBase = Normalize_t<Apply_t<MapInsert, AssocMap<>, KeyAnswer, Int<42>>>;
-using ExampleMap = Normalize_t<Apply_t<MapInsert, ExampleMapBase, KeyLucky, Seven>>;
+using ExampleMap = Normalize_t<Apply_t<MapInsert, ExampleMapBase, KeyLucky, Int<7>>>;
 using MapLookupAnswer = Normalize_t<Apply_t<MapFind, ExampleMap, KeyAnswer>>;
 using MapContainsLucky = Normalize_t<Apply_t<MapContainsKey, ExampleMap, KeyLucky>>;
 using MapSizeExample = Normalize_t<Apply_t<MapSize, ExampleMap>>;
+
+using Lx = Sym<'x'>;
+using Ly = Sym<'y'>;
+using Lz = Sym<'z'>;
+using Lmake = Sym<'m', 'a', 'k', 'e'>;
+
+using LispIdentity = LambdaExpr<Params<Param<Lx, IntType>>, Ref<Lx>>;
+using LispClosureProgram =
+    LetExpr<
+        Bindings<
+            Binding<Lx, Int<10>>,
+            Binding<
+                Lmake,
+                LambdaExpr<
+                    Params<Param<Ly, IntType>>,
+                    LambdaExpr<
+                        Params<Param<Lz, IntType>>,
+                        CallExpr<Add, CallExpr<Add, Ref<Lx>, Ref<Ly>>, Ref<Lz>>
+                    >
+                >
+            >
+        >,
+        CallExpr<CallExpr<Ref<Lmake>, Int<5>>, Int<7>>
+    >;
+using LispClosureResult = EvalLisp_t<LispClosureProgram>;
+using LispClosureResultType = TypeCheck_t<LispClosureProgram>;
+
+using LispStringProgram =
+    LetExpr<
+        Bindings<Binding<Sym<'m', 's', 'g'>, LambdaString>>,
+        CallExpr<StringConcat, Ref<Sym<'m', 's', 'g'>>, String<' ', 'r', 'u', 'n', 't', 'i', 'm', 'e'>>
+    >;
+using LispStringResult = EvalLisp_t<LispStringProgram>;
+
+using LispBadProgram = CallExpr<Add, String<'o', 'o', 'p', 's'>, Int<1>>;
+using LispBadProgramType = TypeCheck_t<LispBadProgram>;
 
 namespace church {
 

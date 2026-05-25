@@ -28,6 +28,8 @@ That gives you something that still feels like a tiny lambda-calculus computer, 
 - Variadic application spine via `Call<...>` to avoid deeply nested binary application trees
 - Fast default normalization with `Normalize_t<T, Fuel>`
 - Exact repeated-term cycle detection with `NormalizeChecked_t<T, Fuel>`
+- Typed Lisp-style front-end with lexical environments and closures
+- Pretty-printing for values, types, Lisp AST nodes, and core lambda terms
 - Named surface syntax compiler with `var`, `lam`, `app`, and `free`
 - Standard library for:
   - combinators: `I`, `K`, `KI`, `S`, `B`, `C`, `W`, `Y`
@@ -48,6 +50,8 @@ lambda.hpp                Umbrella public header
 include/lc/core.hpp       Core AST, utilities, named syntax, public aliases
 include/lc/intrinsics.hpp Intrinsic values and primitive reductions
 include/lc/eval.hpp       Shift, substitution, stepping, normalization
+include/lc/lisp.hpp       Lisp-like AST, environments, closures, and typechecking
+include/lc/pretty.hpp     Pretty-printing and debug rendering
 include/lc/std.hpp        Standard library and example programs
 include/lc/runtime.hpp    Bridge from type-level results to runtime values
 main.cpp                  Demo program
@@ -92,6 +96,11 @@ set union of {1, 3, 5} and {3, 4, 5}: [1, 3, 5, 4]
 set contains 4: true
 map lookup "answer": 42
 map contains "lucky": true
+lisp closure program: (let ((x 10) (make (lambda ((y Int)) (lambda ((z Int)) (+ (+ x y) z))))) ((make 5) 7))
+lisp closure result: 22
+lisp closure type: Int
+lisp string result: lambda runtime
+core lambda identity pretty: (lambda v0)
 ```
 
 The relevant aliases live in [include/lc/std.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/std.hpp):
@@ -212,6 +221,36 @@ using ExampleMap =
 static_assert(IsSame<Normalize_t<Apply_t<MapFind, ExampleMap, String<'x'>>>, Int<10>>::value);
 ```
 
+### 7. Typed Lisp with closures
+
+```cpp
+#include "lambda.hpp"
+
+using namespace lc;
+
+using Program =
+    LetExpr<
+        Bindings<
+            Binding<Sym<'x'>, Int<10>>,
+            Binding<
+                Sym<'m', 'a', 'k', 'e'>,
+                LambdaExpr<
+                    Params<Param<Sym<'y'>, IntType>>,
+                    LambdaExpr<
+                        Params<Param<Sym<'z'>, IntType>>,
+                        CallExpr<Add, CallExpr<Add, Ref<Sym<'x'>>, Ref<Sym<'y'>>>, Ref<Sym<'z'>>>
+                    >
+                >
+            >
+        >,
+        CallExpr<CallExpr<Ref<Sym<'m', 'a', 'k', 'e'>>, Int<5>>, Int<7>>
+    >;
+
+static_assert(IsSame<EvalLisp_t<Program>, Int<22>>::value);
+static_assert(IsSame<TypeCheck_t<Program>, IntType>::value);
+static_assert(pretty_string_view_v<Program> == "(let ((x 10) (make (lambda ((y Int)) (lambda ((z Int)) (+ (+ x y) z))))) ((make 5) 7))");
+```
+
 ## Core Mental Model
 
 There are three layers to keep in mind:
@@ -239,6 +278,7 @@ These are compact data forms that make the system practical:
 - `List<Ts...>`
 - `Set<Ts...>`
 - `AssocMap<Entries...>`
+- Lisp AST nodes like `Ref<...>`, `LambdaExpr<...>`, `CallExpr<...>`, `LetExpr<...>`
 
 They are still manipulated by the evaluator, but they avoid the AST explosion of large Church-encoded data.
 
@@ -295,6 +335,7 @@ to_string_view_v<String<'o', 'k'>>
 to_array_v<List<Nat<1>, Nat<2>, Nat<3>>>
 to_array_v<Set<Nat<1>, Nat<3>, Nat<5>>>
 to_matrix_v<List<List<Int<-1>, Int<0>, Int<1>>>>
+pretty_string_view_v<LispIdentity>
 ```
 
 That bridge is what powers the demo output in [main.cpp](/home/ethan/dev/fun/metaprogramming/main.cpp).
