@@ -2,7 +2,7 @@
 
 This repository is an experiment in treating the C++ type system as a computation engine.
 
-At the center of the project is a small lambda-calculus evaluator built with templates. On top of that core, the library adds pragmatic intrinsic values, a typed Lisp-like front-end, a compile-time reader, pretty-printers, and a standard library of algorithms and data operations. The result is a header-only C++20 system that can reduce lambda terms, evaluate higher-level functional programs, and materialize useful results entirely at compile time.
+At the center of the project is a small lambda-calculus evaluator built with templates. On top of that core, the library adds pragmatic intrinsic values, a typed Lisp-like front-end, a compile-time reader, a reader-macro expansion stage, local type inference, pretty-printers, and a standard library of algorithms and data operations. The result is a header-only C++20 system that can reduce lambda terms, expand Lisp-like source, evaluate higher-level functional programs, and materialize useful results entirely at compile time.
 
 ## What Lambda Calculus Is
 
@@ -82,8 +82,10 @@ So this is both:
   - `Set<Ts...>`
   - `AssocMap<Entries...>`
 - Primitive reducers for arithmetic, comparisons, strings, lists, sets, and maps
-- A typed Lisp-like AST with environments, closures, and typechecking
-- A compile-time reader from source strings to Lisp AST
+- A typed Lisp-like AST with environments, closures, top-level program forms, and typechecking
+- A compile-time reader from source strings to Lisp AST, plus staged source expansion
+- Reader-level syntactic forms such as `define`, `cond`, and `list`
+- Local bidirectional-style inference through `InferType`
 - Pretty-printers for values, types, lambda terms, Lisp forms, and errors
 - A standard library with combinators and example algorithms
 - Runtime bridge helpers so compile-time results can be printed from ordinary C++
@@ -93,8 +95,9 @@ So this is both:
 ```mermaid
 flowchart TD
     A[Source String<br/>ReadSource_t] --> B[Reader Layer<br/>reader.hpp]
-    B --> C[S-Expression AST<br/>SSymbol SList SInt SStringLit]
-    C --> D[Lisp Front-End<br/>lisp.hpp]
+    B --> C[S-Expression AST<br/>SSymbol SList SInt SStringLit SProgram]
+    C --> X[Expansion Stage<br/>ExpandSource_t]
+    X --> D[Lisp Front-End<br/>lisp.hpp]
     D --> E[Typechecker<br/>TypeCheck_t]
     D --> F[Evaluator<br/>EvalLisp_t]
     F --> G[Core Lambda / Hybrid Terms<br/>core.hpp]
@@ -154,7 +157,11 @@ It introduces:
 - `LetExpr<Bindings<...>, Body>`
 - `IfExpr<Cond, Then, Else>`
 - `BeginExpr<...>`
+- `ProgramExpr<Forms...>`
+- `DefineForm<Name, Expr>`
+- `ExprForm<Expr>`
 - `Closure<Params, Body, Env>`
+- `RecursiveClosure<Name, Params, Body, Env>`
 
 This layer formalizes lexical environments and closures so programs can be written more like Lisp and less like raw De Bruijn terms.
 
@@ -175,6 +182,9 @@ It currently supports:
 - `lambda`
 - `let`
 - `begin`
+- top-level `define`
+- `cond`
+- `list`
 - primitive calls
 
 That means we can now write source-level programs like:
@@ -186,6 +196,22 @@ using Program = lc::ReadSource_t<
 ```
 
 instead of hand-assembling every AST node.
+
+Top-level source now follows sequential prelude semantics:
+
+- each top-level `define` extends the environment for later forms
+- the final top-level expression is the program result
+- recursive `define` is supported for functions
+- self-recursive value `define` is rejected
+
+Parameters without explicit annotations now lower through `InferType`, which lets the typechecker recover simple local types instead of immediately falling back to `AnyType`.
+
+There is also a staged debug surface:
+
+```cpp
+using Expanded = lc::ExpandSource_t<"(list 1 2 3)">;
+static_assert(lc::pretty_string_view_v<Expanded> == "(cons 1 (cons 2 (cons 3 '())))");
+```
 
 ### 5. Pretty-printing and runtime bridge
 
@@ -209,7 +235,7 @@ include/lc/core.hpp       Core AST, utilities, named syntax, public aliases
 include/lc/intrinsics.hpp Intrinsic values and primitive reductions
 include/lc/eval.hpp       Shift, substitution, stepping, normalization
 include/lc/lisp.hpp       Lisp AST, closures, environments, typechecking
-include/lc/reader.hpp     Compile-time reader from strings to Lisp AST
+include/lc/reader.hpp     Compile-time reader, top-level forms, and source expansion
 include/lc/pretty.hpp     Pretty-printers for terms, values, types, and errors
 include/lc/std.hpp        Standard library and example programs
 include/lc/runtime.hpp    Runtime bridge for compile-time values
@@ -400,6 +426,56 @@ using WithComment = ReadSourceEval_t<R"(
 
 static_assert(IsSame<EvalLisp_t<Untyped>, Int<42>>::value);
 static_assert(IsSame<Quoted, List<Int<1>, Int<2>, Int<3>>>::value);
+static_assert(IsSame<ReadSourceTypeCheck_t<"((lambda (x) x) 42)">, IntType>::value);
+```
+
+### Top-level programs, `define`, `cond`, and inference
+
+```cpp
+#include "lambda.hpp"
+
+using namespace lc;
+
+using Program = ReadSource_t<R"(
+  (define (fact (n Int))
+    (cond
+      ((zero? n) 1)
+      (else (* n (fact (- n 1)))))
+  )
+  (fact 5)
+)">;
+
+using Inferred = ReadSourceTypeCheck_t<"((lambda (xs) (length xs)) (list 1 2 3))">;
+
+static_assert(IsSame<ReadSourceEval_t<R"(
+  (define (fact (n Int))
+    (cond
+      ((zero? n) 1)
+      (else (* n (fact (- n 1)))))
+  )
+  (fact 5)
+)">, Int<120>>::value);
+
+static_assert(IsSame<Inferred, NatType>::value);
+```
+
+### Expansion and diagnostics
+
+```cpp
+#include "lambda.hpp"
+
+using namespace lc;
+
+using ExpandedList = ExpandSource_t<"(list 1 2 3)">;
+using ExpandedCond = ExpandSource_t<"(cond (#t 1) (else 2))">;
+using RecursiveValueError = ReadSourceEval_t<R"(
+  (define x (+ x 1))
+  x
+)">;
+
+static_assert(pretty_string_view_v<ExpandedList> == "(cons 1 (cons 2 (cons 3 '())))");
+static_assert(pretty_string_view_v<ExpandedCond> == "(if true 1 2)");
+static_assert(IsSame<RecursiveValueError, EvalError<msg_recursive_value_define>>::value);
 ```
 
 ### Classic algorithms at compile time
@@ -462,6 +538,7 @@ The demo in [main.cpp](/home/ethan/dev/fun/metaprogramming/main.cpp) shows that 
 - set and map operations
 - closure-based Lisp programs
 - reader-driven source programs
+- source expansion and local inference
 - pretty-printed parse errors
 
 Typical output:
@@ -476,6 +553,11 @@ three-sum triplets for [-4, -1, -1, 0, 1, 2]: [[-1, -1, 2], [-1, 0, 1]]
 string concat example: lambda calculus
 set union of {1, 3, 5} and {3, 4, 5}: [1, 3, 5, 4]
 lisp closure result: 22
+reader factorial via define/cond: 120
+reader list inference result: 3
+reader list expansion: (cons 1 (cons 2 (cons 3 '())))
+reader cond expansion: (if true 1 2)
+reader recursive value define error: #<eval-error recursive-value-define>
 reader parse error pretty: #<reader-error unterminated-list>
 ```
 
@@ -513,10 +595,14 @@ The tests cover:
 - lambda combinators
 - substitution and shifting
 - surface syntax compilation
+- top-level source programs and sequential `define`
+- reader macro expansion for `define`, `cond`, and `list`
+- recursive function definitions and rejected recursive value defines
 - arithmetic and comparison primitives
 - strings, lists, sets, and maps
 - closure evaluation
 - typechecking
+- local inference behavior
 - reader behavior
 - parse errors
 - fuel exhaustion and cycle detection
@@ -548,7 +634,7 @@ What it bends for practicality:
 - intrinsic numbers instead of default Church numerals
 - intrinsic collections and strings
 - primitive reducers
-- typed front-end and reader layer
+- typed front-end, staged reader layer, and local inference
 
 That compromise is the whole point. It lets the repository explore abstract computation without giving up the ability to run interesting programs at compile time.
 
@@ -574,10 +660,10 @@ If you want to understand it from the outside in, start with:
 
 The current library is already close to a tiny compile-time Lisp environment, but there is plenty of room to grow:
 
-- more reader forms such as `define`, `cond`, and `list`
-- a richer top-level environment
-- type inference beyond explicit annotations
-- macros or staged transforms
+- more reader forms beyond the current `define`, `cond`, and `list`
+- a richer top-level environment and prelude
+- stronger inference beyond the current local monomorphic model
+- user-defined macros or hygienic staged transforms
 - more aggressive reduction optimizations
 - better diagnostics for deeply nested compile-time failures
 

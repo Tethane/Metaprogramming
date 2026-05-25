@@ -199,6 +199,41 @@ struct Pretty<StringContains> {
 };
 
 template<>
+struct Pretty<Cons> {
+    using type = String<'c', 'o', 'n', 's'>;
+};
+
+template<>
+struct Pretty<Head> {
+    using type = String<'h', 'e', 'a', 'd'>;
+};
+
+template<>
+struct Pretty<Tail> {
+    using type = String<'t', 'a', 'i', 'l'>;
+};
+
+template<>
+struct Pretty<IsEmpty> {
+    using type = String<'e', 'm', 'p', 't', 'y', '?'>;
+};
+
+template<>
+struct Pretty<Concat> {
+    using type = String<'c', 'o', 'n', 'c', 'a', 't'>;
+};
+
+template<>
+struct Pretty<Reverse> {
+    using type = String<'r', 'e', 'v', 'e', 'r', 's', 'e'>;
+};
+
+template<>
+struct Pretty<Length> {
+    using type = String<'l', 'e', 'n', 'g', 't', 'h'>;
+};
+
+template<>
 struct Pretty<SetUnion> {
     using type = String<'s', 'e', 't', '-', 'u', 'n', 'i', 'o', 'n'>;
 };
@@ -241,6 +276,11 @@ struct Pretty<Ref<Name>> {
 template<typename Value>
 struct Pretty<Quote<Value>> {
     using type = pretty_detail::StringCatMany_t<String<'\''>, Pretty_t<Value>>;
+};
+
+template<typename Expr>
+struct Pretty<SList<SSymbol<String<'q', 'u', 'o', 't', 'e'>>, Expr>> {
+    using type = pretty_detail::StringCatMany_t<String<'\''>, Pretty_t<Expr>>;
 };
 
 template<typename Name, typename Type>
@@ -313,9 +353,50 @@ struct Pretty<BeginExpr<Expr, NextExpr, RestExprs...>> {
     using type = pretty_detail::StringCatMany_t<String<'(', 'b', 'e', 'g', 'i', 'n', ' '>, typename JoinPretty<String<' '>, Expr, NextExpr, RestExprs...>::type, String<')'>>;
 };
 
+template<typename Name, typename Expr>
+struct Pretty<DefineForm<Name, Expr>> {
+    using type = pretty_detail::StringCatMany_t<
+        String<'(', 'd', 'e', 'f', 'i', 'n', 'e', ' '>,
+        Pretty_t<Name>,
+        String<' '>,
+        Pretty_t<Expr>,
+        String<')'>
+    >;
+};
+
+template<typename Expr>
+struct Pretty<ExprForm<Expr>> {
+    using type = Pretty_t<Expr>;
+};
+
+template<typename Form>
+struct Pretty<ProgramExpr<Form>> {
+    using type = pretty_detail::StringCatMany_t<String<'(', 'p', 'r', 'o', 'g', 'r', 'a', 'm', ' '>, Pretty_t<Form>, String<')'>>;
+};
+
+template<typename FirstForm, typename SecondForm, typename... RestForms>
+struct Pretty<ProgramExpr<FirstForm, SecondForm, RestForms...>> {
+    using type = pretty_detail::StringCatMany_t<
+        String<'(', 'p', 'r', 'o', 'g', 'r', 'a', 'm', ' '>,
+        typename JoinPretty<String<' '>, FirstForm, SecondForm, RestForms...>::type,
+        String<')'>
+    >;
+};
+
 template<typename ParamsT, typename Body, typename Env>
 struct Pretty<Closure<ParamsT, Body, Env>> {
     using type = pretty_detail::StringCatMany_t<String<'#', '<', 'c', 'l', 'o', 's', 'u', 'r', 'e', ' '>, Pretty_t<ParamsT>, String<'>'> >;
+};
+
+template<typename Name, typename ParamsT, typename Body, typename Env>
+struct Pretty<RecursiveClosure<Name, ParamsT, Body, Env>> {
+    using type = pretty_detail::StringCatMany_t<
+        String<'#', '<', 'r', 'e', 'c', '-', 'c', 'l', 'o', 's', 'u', 'r', 'e', ' '>,
+        Pretty_t<Name>,
+        String<' '>,
+        Pretty_t<ParamsT>,
+        String<'>'>
+    >;
 };
 
 template<>
@@ -341,6 +422,21 @@ struct Pretty<StringType> {
 template<>
 struct Pretty<NoneType> {
     using type = String<'N', 'o', 'n', 'e'>;
+};
+
+template<>
+struct Pretty<AnyType> {
+    using type = String<'A', 'n', 'y'>;
+};
+
+template<>
+struct Pretty<UnknownType> {
+    using type = String<'U', 'n', 'k', 'n', 'o', 'w', 'n'>;
+};
+
+template<>
+struct Pretty<InferType> {
+    using type = String<'I', 'n', 'f', 'e', 'r'>;
 };
 
 template<typename Elem>
@@ -381,6 +477,70 @@ struct Pretty<TypeError<Message>> {
 template<typename Message>
 struct Pretty<ReaderError<Message>> {
     using type = pretty_detail::StringCatMany_t<String<'#', '<', 'r', 'e', 'a', 'd', 'e', 'r', '-', 'e', 'r', 'r', 'o', 'r', ' '>, typename pretty_detail::PrettyMessage<Message>::type, String<'>'> >;
+};
+
+template<typename Label>
+struct Pretty<ErrorFrame<Label, void>> {
+    using type = Pretty_t<Label>;
+};
+
+template<typename Label, typename Detail>
+struct Pretty<ErrorFrame<Label, Detail>> {
+    using type = pretty_detail::StringCatMany_t<Pretty_t<Label>, String<':', ' '>, Pretty_t<Detail>>;
+};
+
+template<typename Frame, typename Inner>
+struct Pretty<ErrorContext<Frame, Inner>> {
+    using type = pretty_detail::StringCatMany_t<String<'#', '<', 'c', 't', 'x', ' '>, Pretty_t<Frame>, String<' '>, Pretty_t<Inner>, String<'>'> >;
+};
+
+template<typename Term>
+struct Pretty<OutOfFuel<Term>> {
+    using type = pretty_detail::StringCatMany_t<String<'#', '<', 'o', 'u', 't', '-', 'o', 'f', '-', 'f', 'u', 'e', 'l', ' '>, Pretty_t<Term>, String<'>'> >;
+};
+
+template<typename Term>
+struct Pretty<CycleDetected<Term>> {
+    using type = pretty_detail::StringCatMany_t<String<'#', '<', 'c', 'y', 'c', 'l', 'e', ' '>, Pretty_t<Term>, String<'>'> >;
+};
+
+template<typename Name>
+struct Pretty<SSymbol<Name>> {
+    using type = Pretty_t<Symbol<Name>>;
+};
+
+template<int N>
+struct Pretty<SInt<N>> {
+    using type = Pretty_t<Int<N>>;
+};
+
+template<char... Chars>
+struct Pretty<SStringLit<Chars...>> {
+    using type = Pretty_t<String<Chars...>>;
+};
+
+template<bool B>
+struct Pretty<SBool<B>> {
+    using type = Pretty_t<Bool<B>>;
+};
+
+template<typename... Items>
+struct Pretty<SList<Items...>> {
+    using type = pretty_detail::StringCatMany_t<String<'('>, typename JoinPretty<String<' '>, Items...>::type, String<')'>>;
+};
+
+template<typename Form>
+struct Pretty<SProgram<Form>> {
+    using type = Pretty_t<Form>;
+};
+
+template<typename FirstForm, typename SecondForm, typename... RestForms>
+struct Pretty<SProgram<FirstForm, SecondForm, RestForms...>> {
+    using type = pretty_detail::StringCatMany_t<
+        String<'(', 't', 'o', 'p', ' '>,
+        typename JoinPretty<String<' '>, FirstForm, SecondForm, RestForms...>::type,
+        String<')'>
+    >;
 };
 
 template<typename T>

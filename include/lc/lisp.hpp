@@ -49,8 +49,25 @@ struct LetExpr {};
 template<typename... Exprs>
 struct BeginExpr {};
 
+template<typename... Forms>
+struct ProgramExpr {};
+
+template<typename Name, typename Expr>
+struct DefineForm {
+    using name = Name;
+    using expr = Expr;
+};
+
+template<typename Expr>
+struct ExprForm {
+    using expr = Expr;
+};
+
 template<typename ParamsT, typename Body, typename Env>
 struct Closure {};
+
+template<typename Name, typename ParamsT, typename Body, typename Env>
+struct RecursiveClosure {};
 
 struct NatType {};
 struct IntType {};
@@ -59,6 +76,7 @@ struct StringType {};
 struct NoneType {};
 struct AnyType {};
 struct UnknownType {};
+struct InferType {};
 
 template<typename Elem>
 struct ListType {};
@@ -74,6 +92,15 @@ struct FunctionType {};
 
 template<typename Primitive>
 struct PrimitiveType {};
+
+template<typename Label, typename Detail = void>
+struct ErrorFrame {};
+
+template<typename Frame, typename Inner>
+struct ErrorContext {
+    using frame = Frame;
+    using inner = Inner;
+};
 
 template<typename Message>
 struct EvalError {
@@ -113,6 +140,9 @@ using msg_call_type_error = String<'c', 'a', 'l', 'l', '-', 't', 'y', 'p', 'e', 
 using msg_heterogeneous_list = String<'h', 'e', 't', 'e', 'r', 'o', 'g', 'e', 'n', 'e', 'o', 'u', 's', '-', 'l', 'i', 's', 't'>;
 using msg_heterogeneous_set = String<'h', 'e', 't', 'e', 'r', 'o', 'g', 'e', 'n', 'e', 'o', 'u', 's', '-', 's', 'e', 't'>;
 using msg_heterogeneous_map = String<'h', 'e', 't', 'e', 'r', 'o', 'g', 'e', 'n', 'e', 'o', 'u', 's', '-', 'm', 'a', 'p'>;
+using msg_recursive_value_define = String<'r', 'e', 'c', 'u', 'r', 's', 'i', 'v', 'e', '-', 'v', 'a', 'l', 'u', 'e', '-', 'd', 'e', 'f', 'i', 'n', 'e'>;
+using msg_could_not_infer = String<'c', 'o', 'u', 'l', 'd', '-', 'n', 'o', 't', '-', 'i', 'n', 'f', 'e', 'r'>;
+using msg_invalid_program = String<'i', 'n', 'v', 'a', 'l', 'i', 'd', '-', 'p', 'r', 'o', 'g', 'r', 'a', 'm'>;
 
 template<typename T>
 struct IsPrimitiveTag : std::false_type {};
@@ -136,6 +166,12 @@ template<> struct IsPrimitiveTag<StringContains> : std::true_type {};
 template<> struct IsPrimitiveTag<StringStartsWith> : std::true_type {};
 template<> struct IsPrimitiveTag<StringTake> : std::true_type {};
 template<> struct IsPrimitiveTag<StringDrop> : std::true_type {};
+template<> struct IsPrimitiveTag<Cons> : std::true_type {};
+template<> struct IsPrimitiveTag<Head> : std::true_type {};
+template<> struct IsPrimitiveTag<Tail> : std::true_type {};
+template<> struct IsPrimitiveTag<IsEmpty> : std::true_type {};
+template<> struct IsPrimitiveTag<Concat> : std::true_type {};
+template<> struct IsPrimitiveTag<Reverse> : std::true_type {};
 template<> struct IsPrimitiveTag<Length> : std::true_type {};
 template<> struct IsPrimitiveTag<SetInsert> : std::true_type {};
 template<> struct IsPrimitiveTag<SetContains> : std::true_type {};
@@ -148,6 +184,12 @@ template<> struct IsPrimitiveTag<MapFind> : std::true_type {};
 template<> struct IsPrimitiveTag<MapContainsKey> : std::true_type {};
 template<> struct IsPrimitiveTag<MapErase> : std::true_type {};
 template<> struct IsPrimitiveTag<MapSize> : std::true_type {};
+
+template<typename T>
+struct IsInferMarker : std::false_type {};
+
+template<>
+struct IsInferMarker<InferType> : std::true_type {};
 
 template<typename T>
 struct ValueStaticType {
@@ -177,6 +219,11 @@ struct ValueStaticType<String<Chars...>> {
 template<>
 struct ValueStaticType<None> {
     using type = NoneType;
+};
+
+template<>
+struct ValueStaticType<InferType> {
+    using type = InferType;
 };
 
 template<typename Expected, typename... Items>
@@ -306,6 +353,11 @@ struct DefaultExprType<Closure<ParamsT, Body, Env>> {
     using type = FunctionType<ParamsT, UnknownType>;
 };
 
+template<typename Name, typename ParamsT, typename Body, typename Env>
+struct DefaultExprType<RecursiveClosure<Name, ParamsT, Body, Env>> {
+    using type = FunctionType<ParamsT, UnknownType>;
+};
+
 template<typename Name, typename Env>
 struct EnvLookup {
 private:
@@ -329,6 +381,153 @@ public:
 
 template<typename Name, typename TypeEnv>
 using TypeEnvLookup_t = typename TypeEnvLookup<Name, TypeEnv>::type;
+
+template<typename T>
+struct ContainsInferType : std::false_type {};
+
+template<>
+struct ContainsInferType<InferType> : std::true_type {};
+
+template<typename Elem>
+struct ContainsInferType<ListType<Elem>> : ContainsInferType<Elem> {};
+
+template<typename Elem>
+struct ContainsInferType<SetType<Elem>> : ContainsInferType<Elem> {};
+
+template<typename Key, typename Value>
+struct ContainsInferType<MapType<Key, Value>>
+    : std::bool_constant<ContainsInferType<Key>::value || ContainsInferType<Value>::value> {};
+
+template<typename Name, typename Type>
+struct ContainsInferType<Param<Name, Type>> : ContainsInferType<Type> {};
+
+template<typename... ParamsT>
+struct ContainsInferType<Params<ParamsT...>>
+    : std::bool_constant<(ContainsInferType<ParamsT>::value || ...)> {};
+
+template<typename ParamsT, typename ReturnType>
+struct ContainsInferType<FunctionType<ParamsT, ReturnType>>
+    : std::bool_constant<ContainsInferType<ParamsT>::value || ContainsInferType<ReturnType>::value> {};
+
+template<typename T>
+struct FinalizeInferredType {
+    using type = IfType_t<ContainsInferType<T>::value, TypeError<msg_could_not_infer>, T>;
+};
+
+template<typename T>
+using FinalizeInferredType_t = typename FinalizeInferredType<T>::type;
+
+template<typename Expected, typename Actual>
+struct TypeMatches
+    : std::bool_constant<
+          IsSame<Expected, Actual>::value ||
+          IsSame<Expected, AnyType>::value ||
+          IsSame<Expected, InferType>::value ||
+          IsSame<Actual, InferType>::value> {};
+
+template<typename Name, typename ParamsT>
+struct ParamsContainName : std::false_type {};
+
+template<typename Name>
+struct ParamsContainName<Name, Params<>> : std::false_type {};
+
+template<typename Name, typename Type, typename... RestParams>
+struct ParamsContainName<Name, Params<Param<Name, Type>, RestParams...>> : std::true_type {};
+
+template<typename Name, typename OtherName, typename Type, typename... RestParams>
+struct ParamsContainName<Name, Params<Param<OtherName, Type>, RestParams...>>
+    : ParamsContainName<Name, Params<RestParams...>> {};
+
+template<typename Name, typename Expr>
+struct ContainsRef : std::false_type {};
+
+template<typename Name>
+struct ContainsRef<Name, Ref<Name>> : std::true_type {};
+
+template<typename Name, typename OtherName>
+struct ContainsRef<Name, Ref<OtherName>> : std::false_type {};
+
+template<typename Name, typename Value>
+struct ContainsRef<Name, Quote<Value>> : std::false_type {};
+
+template<typename Name, typename Cond, typename ThenExpr, typename ElseExpr>
+struct ContainsRef<Name, IfExpr<Cond, ThenExpr, ElseExpr>>
+    : std::bool_constant<
+          ContainsRef<Name, Cond>::value ||
+          ContainsRef<Name, ThenExpr>::value ||
+          ContainsRef<Name, ElseExpr>::value> {};
+
+template<typename Name, typename ParamsT, typename Body>
+struct ContainsRef<Name, LambdaExpr<ParamsT, Body>>
+    : std::bool_constant<!ParamsContainName<Name, ParamsT>::value && ContainsRef<Name, Body>::value> {};
+
+template<typename Name, typename FnExpr, typename... ArgExprs>
+struct ContainsRef<Name, CallExpr<FnExpr, ArgExprs...>>
+    : std::bool_constant<ContainsRef<Name, FnExpr>::value || (false || ... || ContainsRef<Name, ArgExprs>::value)> {};
+
+template<typename Name, typename BindingT>
+struct BindingContainsRef;
+
+template<typename Name, typename BindingName, typename Expr>
+struct BindingContainsRef<Name, Binding<BindingName, Expr>> : ContainsRef<Name, Expr> {};
+
+template<typename Name, typename... BindingsT>
+struct BindingsContainName : std::false_type {};
+
+template<typename Name>
+struct BindingsContainName<Name, Bindings<>> : std::false_type {};
+
+template<typename Name, typename Expr, typename... RestBindings>
+struct BindingsContainName<Name, Bindings<Binding<Name, Expr>, RestBindings...>> : std::true_type {};
+
+template<typename Name, typename BindingName, typename Expr, typename... RestBindings>
+struct BindingsContainName<Name, Bindings<Binding<BindingName, Expr>, RestBindings...>>
+    : BindingsContainName<Name, Bindings<RestBindings...>> {};
+
+template<typename Name, typename... BindingsT>
+struct ContainsRef<Name, Bindings<BindingsT...>>
+    : std::bool_constant<(false || ... || BindingContainsRef<Name, BindingsT>::value)> {};
+
+template<typename Name, typename BindingsT, typename Body>
+struct ContainsRef<Name, LetExpr<BindingsT, Body>>
+    : std::bool_constant<
+          ContainsRef<Name, BindingsT>::value ||
+          (!BindingsContainName<Name, BindingsT>::value && ContainsRef<Name, Body>::value)> {};
+
+template<typename Name, typename... Exprs>
+struct ContainsRef<Name, BeginExpr<Exprs...>>
+    : std::bool_constant<(false || ... || ContainsRef<Name, Exprs>::value)> {};
+
+template<typename ParamsT, typename ArgTypes>
+struct BindInferredParams {
+    using type = ParamsT;
+};
+
+template<>
+struct BindInferredParams<Params<>, TypePack<>> {
+    using type = Params<>;
+};
+
+template<typename Name, typename ParamType, typename... RestParams, typename ArgType, typename... RestArgs>
+struct BindInferredParams<Params<Param<Name, ParamType>, RestParams...>, TypePack<ArgType, RestArgs...>> {
+private:
+    using bound_type = IfType_t<IsSame<ParamType, InferType>::value, ArgType, ParamType>;
+    using rest = typename BindInferredParams<Params<RestParams...>, TypePack<RestArgs...>>::type;
+
+    template<typename FirstParam, typename RestParamsT>
+    struct Combine;
+
+    template<typename FirstParam, typename... RestParamsT>
+    struct Combine<FirstParam, Params<RestParamsT...>> {
+        using type = Params<FirstParam, RestParamsT...>;
+    };
+
+public:
+    using type = typename Combine<Param<Name, bound_type>, rest>::type;
+};
+
+template<typename ParamsT, typename ArgTypes>
+using BindInferredParams_t = typename BindInferredParams<ParamsT, ArgTypes>::type;
 
 template<typename Expr, typename Env>
 struct EvalLisp {
@@ -452,6 +651,75 @@ public:
     >;
 };
 
+template<typename Name, typename ParamsT, typename Body, typename CapturedEnv, typename... Args>
+struct ApplyLisp<RecursiveClosure<Name, ParamsT, Body, CapturedEnv>, ValuePack<Args...>> {
+private:
+    using self_env = detail::AssocInsert_t<Name, RecursiveClosure<Name, ParamsT, Body, CapturedEnv>, CapturedEnv>;
+    using bound_env = typename BindValues<ParamsT, ValuePack<Args...>, self_env>::type;
+
+public:
+    using type = IfType_t<
+        IsEvalError<bound_env>::value,
+        bound_env,
+        typename EvalLisp<Body, bound_env>::type
+    >;
+};
+
+template<typename Form, typename Env>
+struct EvalProgramForm;
+
+template<typename Expr, typename Env>
+struct EvalProgramForm<ExprForm<Expr>, Env> {
+    using value = typename EvalLisp<Expr, Env>::type;
+    using next_env = Env;
+};
+
+template<typename Name, typename Expr, typename Env>
+struct EvalProgramForm<DefineForm<Name, Expr>, Env> {
+private:
+    using recursive = std::bool_constant<ContainsRef<Name, Expr>::value>;
+    using value_or_error = typename EvalLisp<Expr, Env>::type;
+
+public:
+    using value = IfType_t<
+        recursive::value,
+        EvalError<msg_recursive_value_define>,
+        value_or_error
+    >;
+    using next_env = IfType_t<
+        IsEvalError<value>::value,
+        Env,
+        detail::AssocInsert_t<Name, value, Env>
+    >;
+};
+
+template<typename Name, typename ParamsT, typename Body, typename Env>
+struct EvalProgramForm<DefineForm<Name, LambdaExpr<ParamsT, Body>>, Env> {
+    using value = RecursiveClosure<Name, ParamsT, Body, Env>;
+    using next_env = detail::AssocInsert_t<Name, value, Env>;
+};
+
+template<typename Env, typename LastValue, typename... Forms>
+struct EvalProgramImpl;
+
+template<typename Env, typename LastValue>
+struct EvalProgramImpl<Env, LastValue> {
+    using type = LastValue;
+};
+
+template<typename Env, typename LastValue, typename Form, typename... RestForms>
+struct EvalProgramImpl<Env, LastValue, Form, RestForms...> {
+private:
+    using step = EvalProgramForm<Form, Env>;
+
+public:
+    using type = IfType_t<
+        IsEvalError<typename step::value>::value,
+        typename step::value,
+        typename EvalProgramImpl<typename step::next_env, typename step::value, RestForms...>::type
+    >;
+};
+
 template<typename Name, typename Env>
 struct EvalLisp<Ref<Name>, Env> {
     using type = EnvLookup_t<Name, Env>;
@@ -572,6 +840,11 @@ struct EvalLisp<BeginExpr<Expr, NextExpr, RestExprs...>, Env> {
     using type = typename EvalBegin<Env, BeginExpr<Expr, NextExpr, RestExprs...>>::type;
 };
 
+template<typename... Forms, typename Env>
+struct EvalLisp<ProgramExpr<Forms...>, Env> {
+    using type = typename EvalProgramImpl<Env, None, Forms...>::type;
+};
+
 template<bool FnError, bool ArgsError, typename FnValue, typename ArgValues>
 struct EvalCallDispatch;
 
@@ -680,8 +953,7 @@ private:
     struct Matches<Params<ParamsP...>, TypePack<ArgsA...>>
         : std::bool_constant<
               sizeof...(ParamsP) == sizeof...(ArgsA) &&
-              ((IsSame<typename ParamsP::type, AnyType>::value ||
-                IsSame<typename ParamsP::type, ArgsA>::value) && ...)
+              (TypeMatches<typename ParamsP::type, ArgsA>::value && ...)
           > {};
 
 public:
@@ -933,6 +1205,166 @@ struct TypeApply<PrimitiveType<MapSize>, TypePack<MapType<KeyType, ValueType>>> 
     using type = NatType;
 };
 
+template<>
+struct TypeApply<PrimitiveType<Add>, TypePack<InferType, IntType>> {
+    using type = IntType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Add>, TypePack<IntType, InferType>> {
+    using type = IntType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Sub>, TypePack<InferType, IntType>> {
+    using type = IntType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Sub>, TypePack<IntType, InferType>> {
+    using type = IntType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Mul>, TypePack<InferType, IntType>> {
+    using type = IntType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Mul>, TypePack<IntType, InferType>> {
+    using type = IntType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Div>, TypePack<InferType, IntType>> {
+    using type = IntType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Div>, TypePack<IntType, InferType>> {
+    using type = IntType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Mod>, TypePack<InferType, IntType>> {
+    using type = IntType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Mod>, TypePack<IntType, InferType>> {
+    using type = IntType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Pow>, TypePack<InferType, NatType>> {
+    using type = IntType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Eq>, TypePack<InferType, IntType>> {
+    using type = BoolType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Eq>, TypePack<IntType, InferType>> {
+    using type = BoolType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Lt>, TypePack<InferType, IntType>> {
+    using type = BoolType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Lt>, TypePack<IntType, InferType>> {
+    using type = BoolType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Lte>, TypePack<InferType, IntType>> {
+    using type = BoolType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Lte>, TypePack<IntType, InferType>> {
+    using type = BoolType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Gt>, TypePack<InferType, IntType>> {
+    using type = BoolType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Gt>, TypePack<IntType, InferType>> {
+    using type = BoolType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Gte>, TypePack<InferType, IntType>> {
+    using type = BoolType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Gte>, TypePack<IntType, InferType>> {
+    using type = BoolType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<IsZero>, TypePack<InferType>> {
+    using type = BoolType;
+};
+
+template<>
+struct TypeApply<PrimitiveType<Length>, TypePack<InferType>> {
+    using type = NatType;
+};
+
+template<typename ElemType>
+struct TypeApply<PrimitiveType<Cons>, TypePack<ElemType, ListType<AnyType>>> {
+    using type = ListType<ElemType>;
+};
+
+template<typename ElemType>
+struct TypeApply<PrimitiveType<Cons>, TypePack<ElemType, ListType<ElemType>>> {
+    using type = ListType<ElemType>;
+};
+
+template<typename ElemType>
+struct TypeApply<PrimitiveType<Head>, TypePack<ListType<ElemType>>> {
+    using type = ElemType;
+};
+
+template<typename ElemType>
+struct TypeApply<PrimitiveType<Tail>, TypePack<ListType<ElemType>>> {
+    using type = ListType<ElemType>;
+};
+
+template<typename ElemType>
+struct TypeApply<PrimitiveType<IsEmpty>, TypePack<ListType<ElemType>>> {
+    using type = BoolType;
+};
+
+template<typename ElemType>
+struct TypeApply<PrimitiveType<Concat>, TypePack<ListType<ElemType>, ListType<ElemType>>> {
+    using type = ListType<ElemType>;
+};
+
+template<typename ElemType>
+struct TypeApply<PrimitiveType<Concat>, TypePack<ListType<AnyType>, ListType<ElemType>>> {
+    using type = ListType<ElemType>;
+};
+
+template<typename ElemType>
+struct TypeApply<PrimitiveType<Concat>, TypePack<ListType<ElemType>, ListType<AnyType>>> {
+    using type = ListType<ElemType>;
+};
+
+template<typename ElemType>
+struct TypeApply<PrimitiveType<Reverse>, TypePack<ListType<ElemType>>> {
+    using type = ListType<ElemType>;
+};
+
 template<typename Name, typename TypeEnv>
 struct TypeCheck<Ref<Name>, TypeEnv> {
     using type = TypeEnvLookup_t<Name, TypeEnv>;
@@ -941,6 +1373,23 @@ struct TypeCheck<Ref<Name>, TypeEnv> {
 template<typename Value, typename TypeEnv>
 struct TypeCheck<Quote<Value>, TypeEnv> {
     using type = ValueStaticType_t<Value>;
+};
+
+template<typename ThenType, typename ElseType>
+struct MergeBranchTypes {
+    using type = IfType_t<
+        IsSame<ThenType, ElseType>::value,
+        ThenType,
+        IfType_t<
+            IsSame<ThenType, InferType>::value,
+            ElseType,
+            IfType_t<
+                IsSame<ElseType, InferType>::value,
+                ThenType,
+                TypeError<msg_branch_type_mismatch>
+            >
+        >
+    >;
 };
 
 template<typename Cond, typename ThenExpr, typename ElseExpr, typename TypeEnv>
@@ -963,7 +1412,7 @@ public:
                 IfType_t<
                     IsTypeError<else_type>::value,
                     else_type,
-                    IfType_t<IsSame<then_type, else_type>::value, then_type, TypeError<msg_branch_type_mismatch>>
+                    typename MergeBranchTypes<then_type, else_type>::type
                 >
             >
         >
@@ -1057,6 +1506,115 @@ public:
         current_type,
         typename TypeCheck<BeginExpr<NextExpr, RestExprs...>, TypeEnv>::type
     >;
+};
+
+template<typename Form, typename TypeEnv>
+struct TypeCheckProgramForm;
+
+template<typename Expr, typename TypeEnv>
+struct TypeCheckProgramForm<ExprForm<Expr>, TypeEnv> {
+    using value_type = typename TypeCheck<Expr, TypeEnv>::type;
+    using next_env = TypeEnv;
+};
+
+template<typename Name, typename Expr, typename TypeEnv>
+struct TypeCheckProgramForm<DefineForm<Name, Expr>, TypeEnv> {
+private:
+    using expr_type = typename TypeCheck<Expr, TypeEnv>::type;
+
+public:
+    using value_type = IfType_t<
+        ContainsRef<Name, Expr>::value,
+        TypeError<msg_recursive_value_define>,
+        expr_type
+    >;
+    using next_env = IfType_t<
+        IsTypeError<value_type>::value,
+        TypeEnv,
+        detail::AssocInsert_t<Name, value_type, TypeEnv>
+    >;
+};
+
+template<typename Name, typename ParamsT, typename Body, typename TypeEnv>
+struct TypeCheckProgramForm<DefineForm<Name, LambdaExpr<ParamsT, Body>>, TypeEnv> {
+private:
+    using provisional_type = FunctionType<ParamsT, InferType>;
+    using env_with_self = detail::AssocInsert_t<Name, provisional_type, TypeEnv>;
+    using body_env = typename ExtendTypeEnvWithParams<ParamsT, env_with_self>::type;
+    using body_type = typename TypeCheck<Body, body_env>::type;
+
+public:
+    using value_type = IfType_t<
+        IsTypeError<body_type>::value,
+        body_type,
+        FunctionType<ParamsT, body_type>
+    >;
+    using next_env = IfType_t<
+        IsTypeError<value_type>::value,
+        TypeEnv,
+        detail::AssocInsert_t<Name, value_type, TypeEnv>
+    >;
+};
+
+template<typename TypeEnv, typename LastType, typename... Forms>
+struct TypeCheckProgramImpl;
+
+template<typename TypeEnv, typename LastType>
+struct TypeCheckProgramImpl<TypeEnv, LastType> {
+    using type = LastType;
+};
+
+template<typename TypeEnv, typename LastType, typename Form, typename... RestForms>
+struct TypeCheckProgramImpl<TypeEnv, LastType, Form, RestForms...> {
+private:
+    using step = TypeCheckProgramForm<Form, TypeEnv>;
+
+public:
+    using type = IfType_t<
+        IsTypeError<typename step::value_type>::value,
+        typename step::value_type,
+        typename TypeCheckProgramImpl<typename step::next_env, typename step::value_type, RestForms...>::type
+    >;
+};
+
+template<typename... Forms, typename TypeEnv>
+struct TypeCheck<ProgramExpr<Forms...>, TypeEnv> {
+private:
+    using raw_type = typename TypeCheckProgramImpl<TypeEnv, NoneType, Forms...>::type;
+
+public:
+    using type = FinalizeInferredType_t<raw_type>;
+};
+
+template<typename ParamsT, typename Body, typename... ArgExprs, typename TypeEnv>
+struct TypeCheck<CallExpr<LambdaExpr<ParamsT, Body>, ArgExprs...>, TypeEnv> {
+private:
+    using arg_types = typename TypeArgsImpl<TypeEnv, TypePack<>, ArgExprs...>::type;
+
+    template<typename T>
+    struct Dispatch {
+        using type = T;
+    };
+
+    template<typename... ArgTypes>
+    struct Dispatch<TypePack<ArgTypes...>> {
+    private:
+        using inferred_params = BindInferredParams_t<ParamsT, TypePack<ArgTypes...>>;
+        using expected_fn = FunctionType<inferred_params, InferType>;
+        using arity_check = typename TypeApply<expected_fn, TypePack<ArgTypes...>>::type;
+        using body_env = typename ExtendTypeEnvWithParams<inferred_params, TypeEnv>::type;
+        using body_type = typename TypeCheck<Body, body_env>::type;
+
+    public:
+        using type = IfType_t<
+            IsTypeError<arity_check>::value,
+            arity_check,
+            body_type
+        >;
+    };
+
+public:
+    using type = typename Dispatch<arg_types>::type;
 };
 
 template<typename FnExpr, typename... ArgExprs, typename TypeEnv>

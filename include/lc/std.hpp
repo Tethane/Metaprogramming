@@ -163,6 +163,44 @@ using ReaderCommentResult = ReadSourceEval_t<R"(
 
 using ReaderEscapedStringResult = ReadSourceEval_t<"\"lambda\\nreader\"">;
 using ReaderBoolProgram = ReadSourceEval_t<"(if #t 1 2)">;
+using ReaderBoolProgramType = ReadSourceTypeCheck_t<"(if #t 1 2)">;
+
+using ReaderDefinedFactorialProgram = ReadSource_t<R"(
+    (define (fact (n Int))
+      (cond
+        ((zero? n) 1)
+        (else (* n (fact (- n 1)))))
+    )
+    (fact 5)
+)">;
+using ReaderDefinedFactorialResult = ReadSourceEval_t<R"(
+    (define (fact (n Int))
+      (cond
+        ((zero? n) 1)
+        (else (* n (fact (- n 1)))))
+    )
+    (fact 5)
+)">;
+using ReaderDefinedFactorialType = ReadSourceTypeCheck_t<R"(
+    (define (fact (n Int))
+      (cond
+        ((zero? n) 1)
+        (else (* n (fact (- n 1)))))
+    )
+    (fact 5)
+)">;
+
+using ReaderListInferenceProgram = ReadSource_t<"((lambda (xs) (length xs)) (list 1 2 3))">;
+using ReaderListInferenceResult = ReadSourceEval_t<"((lambda (xs) (length xs)) (list 1 2 3))">;
+using ReaderListInferenceType = ReadSourceTypeCheck_t<"((lambda (xs) (length xs)) (list 1 2 3))">;
+
+using ReaderExpandList = ExpandSource_t<"(list 1 2 3)">;
+using ReaderExpandCond = ExpandSource_t<"(cond (#t 1) (else 2))">;
+using ReaderMissingElseError = ReadSource_t<"(cond (#t 1))">;
+using ReaderRecursiveValueDefineError = ReadSourceEval_t<R"(
+    (define x (+ x 1))
+    x
+)">;
 
 namespace church {
 

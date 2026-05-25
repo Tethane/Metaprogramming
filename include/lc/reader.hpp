@@ -17,6 +17,9 @@ struct IsReaderError : std::false_type {};
 template<typename Message>
 struct IsReaderError<ReaderError<Message>> : std::true_type {};
 
+template<typename Frame, typename Inner>
+struct IsReaderError<ErrorContext<Frame, Inner>> : IsReaderError<Inner> {};
+
 using msg_reader_unexpected_eof = String<'u', 'n', 'e', 'x', 'p', 'e', 'c', 't', 'e', 'd', '-', 'e', 'o', 'f'>;
 using msg_reader_unexpected_rparen = String<'u', 'n', 'e', 'x', 'p', 'e', 'c', 't', 'e', 'd', '-', 'r', 'p', 'a', 'r', 'e', 'n'>;
 using msg_reader_unterminated_list = String<'u', 'n', 't', 'e', 'r', 'm', 'i', 'n', 'a', 't', 'e', 'd', '-', 'l', 'i', 's', 't'>;
@@ -30,6 +33,9 @@ using msg_reader_invalid_if = String<'i', 'n', 'v', 'a', 'l', 'i', 'd', '-', 'i'
 using msg_reader_invalid_begin = String<'i', 'n', 'v', 'a', 'l', 'i', 'd', '-', 'b', 'e', 'g', 'i', 'n'>;
 using msg_reader_invalid_quote = String<'i', 'n', 'v', 'a', 'l', 'i', 'd', '-', 'q', 'u', 'o', 't', 'e'>;
 using msg_reader_invalid_application = String<'i', 'n', 'v', 'a', 'l', 'i', 'd', '-', 'a', 'p', 'p', 'l', 'i', 'c', 'a', 't', 'i', 'o', 'n'>;
+using msg_reader_invalid_define = String<'i', 'n', 'v', 'a', 'l', 'i', 'd', '-', 'd', 'e', 'f', 'i', 'n', 'e'>;
+using msg_reader_invalid_cond = String<'i', 'n', 'v', 'a', 'l', 'i', 'd', '-', 'c', 'o', 'n', 'd'>;
+using msg_reader_missing_else = String<'m', 'i', 's', 's', 'i', 'n', 'g', '-', 'e', 'l', 's', 'e'>;
 using msg_reader_unknown_type = String<'u', 'n', 'k', 'n', 'o', 'w', 'n', '-', 't', 'y', 'p', 'e'>;
 
 template<typename Expr, typename Rest>
@@ -53,7 +59,30 @@ struct SBool {};
 template<typename... Items>
 struct SList {};
 
+template<typename... Forms>
+struct SProgram {};
+
 namespace reader_detail {
+
+using define_label = String<'d', 'e', 'f', 'i', 'n', 'e'>;
+using cond_label = String<'c', 'o', 'n', 'd'>;
+using list_label = String<'l', 'i', 's', 't'>;
+using if_label = String<'i', 'f'>;
+using lambda_label = String<'l', 'a', 'm', 'b', 'd', 'a'>;
+using let_label = String<'l', 'e', 't'>;
+using begin_label = String<'b', 'e', 'g', 'i', 'n'>;
+using quote_label = String<'q', 'u', 'o', 't', 'e'>;
+using else_label = String<'e', 'l', 's', 'e'>;
+using cons_label = String<'c', 'o', 'n', 's'>;
+using nil_label = String<'n', 'i', 'l'>;
+using none_label = String<'n', 'o', 'n', 'e'>;
+using infer_label = String<'I', 'n', 'f', 'e', 'r'>;
+
+template<typename Label>
+using ReaderFrame = ErrorFrame<Label>;
+
+template<typename Label, typename Inner>
+using ReaderContext = ErrorContext<ReaderFrame<Label>, Inner>;
 
 template<typename Str, char C>
 struct StringPushBack;
@@ -224,7 +253,7 @@ struct QuoteDispatch {
 
 template<typename Expr, typename Rest>
 struct QuoteDispatch<Parsed<Expr, Rest>> {
-    using type = Parsed<SList<SSymbol<String<'q', 'u', 'o', 't', 'e'>>, Expr>, Rest>;
+    using type = Parsed<SList<SSymbol<quote_label>, Expr>, Rest>;
 };
 
 template<char... Rest>
@@ -410,26 +439,498 @@ struct ParseListItems<SList<Items...>, Str> {
     using type = typename ParseListItemsDispatch<SList<Items...>, SkipWhitespace_t<Str>>::type;
 };
 
-template<typename ParsedT>
-struct ParseProgramResult {
-    using type = ParsedT;
+template<typename Acc, typename Str>
+struct ParseTopLevelForms;
+
+template<typename... Forms>
+struct ParseTopLevelForms<TypeList<Forms...>, String<>> {
+    using type = SProgram<Forms...>;
 };
 
-template<typename Expr, typename Rest>
-struct ParseProgramResult<Parsed<Expr, Rest>> {
+template<typename Acc, typename Str>
+struct ParseTopLevelDispatch;
+
+template<typename Acc, typename Trimmed>
+struct ParseTopLevelAfterTrim;
+
+template<typename... Forms>
+struct ParseTopLevelAfterTrim<TypeList<Forms...>, String<>> {
+    using type = SProgram<Forms...>;
+};
+
+template<typename Acc, char C, char... Rest>
+struct ParseTopLevelAfterTrim<Acc, String<C, Rest...>> {
+    using type = typename ParseTopLevelDispatch<Acc, String<C, Rest...>>::type;
+};
+
+template<typename... Forms, char C, char... Rest>
+struct ParseTopLevelDispatch<TypeList<Forms...>, String<C, Rest...>> {
 private:
-    using tail = SkipWhitespace_t<Rest>;
+    using parsed = typename ParseExpr<String<C, Rest...>>::type;
+
+    template<typename ParsedT>
+    struct Next {
+        using type = ParsedT;
+    };
+
+    template<typename Expr, typename Tail>
+    struct Next<Parsed<Expr, Tail>> {
+        using type = typename ParseTopLevelForms<TypeList<Forms..., Expr>, Tail>::type;
+    };
 
 public:
-    using type = IfType_t<
-        IsSame<tail, String<>>::value,
-        Expr,
-        ReaderError<msg_reader_trailing_input>
-    >;
+    using type = typename Next<parsed>::type;
+};
+
+template<typename... Forms, typename Str>
+struct ParseTopLevelForms<TypeList<Forms...>, Str> {
+private:
+    using trimmed = SkipWhitespace_t<Str>;
+
+public:
+    using type = typename ParseTopLevelAfterTrim<TypeList<Forms...>, trimmed>::type;
 };
 
 template<typename Str>
-using ParseProgram_t = typename ParseProgramResult<typename ParseExpr<Str>::type>::type;
+using ParseProgram_t = typename ParseTopLevelForms<TypeList<>, Str>::type;
+
+template<typename SExpr>
+struct ExpandExpr {
+    using type = SExpr;
+};
+
+template<typename SExpr>
+struct ExpandTopLevelForm {
+    using type = typename ExpandExpr<SExpr>::type;
+};
+
+template<typename... Forms>
+struct ExpandProgram;
+
+template<>
+struct ExpandProgram<> {
+    using type = SProgram<>;
+};
+
+template<typename Head, typename... Tail>
+struct ExpandProgram<Head, Tail...> {
+private:
+    using expanded_head = typename ExpandTopLevelForm<Head>::type;
+    using expanded_tail = typename ExpandProgram<Tail...>::type;
+
+    template<typename HeadT, typename TailProgram>
+    struct Combine;
+
+    template<typename HeadT, typename... TailForms>
+    struct Combine<HeadT, SProgram<TailForms...>> {
+        using type = SProgram<HeadT, TailForms...>;
+    };
+
+public:
+    using type = IfType_t<
+        IsReaderError<expanded_head>::value,
+        expanded_head,
+        typename Combine<expanded_head, expanded_tail>::type
+    >;
+};
+
+template<typename SExprs>
+struct ExpandProgramDispatch {
+    using type = ReaderContext<String<'p', 'r', 'o', 'g', 'r', 'a', 'm'>, ReaderError<msg_invalid_program>>;
+};
+
+template<typename Message>
+struct ExpandProgramDispatch<ReaderError<Message>> {
+    using type = ReaderError<Message>;
+};
+
+template<typename Frame, typename Inner>
+struct ExpandProgramDispatch<ErrorContext<Frame, Inner>> {
+    using type = ErrorContext<Frame, Inner>;
+};
+
+template<typename... Forms>
+struct ExpandProgramDispatch<SProgram<Forms...>> {
+    using type = typename ExpandProgram<Forms...>::type;
+};
+
+template<typename... Exprs>
+struct ExpandExprPack;
+
+template<typename Done, typename... Exprs>
+struct ExpandExprPackImpl;
+
+template<typename... Done>
+struct ExpandExprPackImpl<TypeList<Done...>> {
+    using type = TypeList<Done...>;
+};
+
+template<bool Error, typename Current, typename Done, typename... Rest>
+struct ExpandExprPackNext;
+
+template<typename Current, typename Done, typename... Rest>
+struct ExpandExprPackNext<true, Current, Done, Rest...> {
+    using type = Current;
+};
+
+template<typename Current, typename... Done, typename... Rest>
+struct ExpandExprPackNext<false, Current, TypeList<Done...>, Rest...> {
+    using type = typename ExpandExprPackImpl<TypeList<Done..., Current>, Rest...>::type;
+};
+
+template<typename... Done, typename Expr, typename... Rest>
+struct ExpandExprPackImpl<TypeList<Done...>, Expr, Rest...> {
+private:
+    using current = typename ExpandExpr<Expr>::type;
+
+public:
+    using type = typename ExpandExprPackNext<
+        IsReaderError<current>::value,
+        current,
+        TypeList<Done...>,
+        Rest...
+    >::type;
+};
+
+template<typename... Exprs>
+struct ExpandExprPack {
+    using type = typename ExpandExprPackImpl<TypeList<>, Exprs...>::type;
+};
+
+template<typename ExprPack>
+struct RebuildSList;
+
+template<typename... Exprs>
+struct RebuildSList<TypeList<Exprs...>> {
+    using type = SList<Exprs...>;
+};
+
+template<typename Expr>
+struct MakeBeginSExpr {
+    using type = Expr;
+};
+
+template<typename Expr, typename NextExpr, typename... RestExprs>
+struct MakeBeginSExpr<SList<Expr, NextExpr, RestExprs...>> {
+    using type = SList<SSymbol<begin_label>, Expr, NextExpr, RestExprs...>;
+};
+
+template<typename ExprPack>
+struct MakeExpandedBody;
+
+template<typename Expr>
+struct MakeExpandedBody<TypeList<Expr>> {
+    using type = Expr;
+};
+
+template<typename Expr, typename NextExpr, typename... RestExprs>
+struct MakeExpandedBody<TypeList<Expr, NextExpr, RestExprs...>> {
+    using type = SList<SSymbol<begin_label>, Expr, NextExpr, RestExprs...>;
+};
+
+template<typename... Items>
+struct ExpandExpr<SList<Items...>> {
+private:
+    using pack = typename ExpandExprPack<Items...>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<pack>::value,
+        pack,
+        typename RebuildSList<pack>::type
+    >;
+};
+
+template<typename Expr>
+struct ExpandExpr<SList<SSymbol<quote_label>, Expr>> {
+    using type = SList<SSymbol<quote_label>, Expr>;
+};
+
+template<typename... Parts>
+struct ExpandExpr<SList<SSymbol<define_label>, Parts...>> {
+    using type = ReaderContext<define_label, ReaderError<msg_reader_invalid_define>>;
+};
+
+template<typename Cond, typename ThenExpr, typename ElseExpr>
+struct ExpandExpr<SList<SSymbol<if_label>, Cond, ThenExpr, ElseExpr>> {
+private:
+    using expanded_cond = typename ExpandExpr<Cond>::type;
+    using expanded_then = typename ExpandExpr<ThenExpr>::type;
+    using expanded_else = typename ExpandExpr<ElseExpr>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<expanded_cond>::value,
+        expanded_cond,
+        IfType_t<
+            IsReaderError<expanded_then>::value,
+            expanded_then,
+            IfType_t<
+                IsReaderError<expanded_else>::value,
+                expanded_else,
+                SList<SSymbol<if_label>, expanded_cond, expanded_then, expanded_else>
+            >
+        >
+    >;
+};
+
+template<typename... Parts>
+struct ExpandExpr<SList<SSymbol<if_label>, Parts...>> {
+    using type = ReaderError<msg_reader_invalid_if>;
+};
+
+template<typename ParamsSExpr, typename BodyExpr, typename... RestBodyExprs>
+struct ExpandExpr<SList<SSymbol<lambda_label>, ParamsSExpr, BodyExpr, RestBodyExprs...>> {
+private:
+    using body_pack = typename ExpandExprPack<BodyExpr, RestBodyExprs...>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<body_pack>::value,
+        body_pack,
+        SList<SSymbol<lambda_label>, ParamsSExpr, typename MakeExpandedBody<body_pack>::type>
+    >;
+};
+
+template<typename... Parts>
+struct ExpandExpr<SList<SSymbol<lambda_label>, Parts...>> {
+    using type = ReaderError<msg_reader_invalid_lambda>;
+};
+
+template<typename BindingSExpr>
+struct ExpandBinding {
+    using type = ReaderError<msg_reader_invalid_binding>;
+};
+
+template<typename Name, typename Expr>
+struct ExpandBinding<SList<SSymbol<Name>, Expr>> {
+private:
+    using expanded_expr = typename ExpandExpr<Expr>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<expanded_expr>::value,
+        expanded_expr,
+        SList<SSymbol<Name>, expanded_expr>
+    >;
+};
+
+template<typename BindingsSExpr>
+struct ExpandBindings {
+    using type = ReaderError<msg_reader_invalid_let>;
+};
+
+template<>
+struct ExpandBindings<SList<>> {
+    using type = SList<>;
+};
+
+template<typename First, typename... Rest>
+struct ExpandBindings<SList<First, Rest...>> {
+private:
+    using first = typename ExpandBinding<First>::type;
+    using rest = typename ExpandBindings<SList<Rest...>>::type;
+
+    template<typename FirstBinding, typename RestBindings>
+    struct Combine;
+
+    template<typename FirstBinding, typename... RestBindings>
+    struct Combine<FirstBinding, SList<RestBindings...>> {
+        using type = SList<FirstBinding, RestBindings...>;
+    };
+
+public:
+    using type = IfType_t<
+        IsReaderError<first>::value,
+        first,
+        IfType_t<
+            IsReaderError<rest>::value,
+            rest,
+            typename Combine<first, rest>::type
+        >
+    >;
+};
+
+template<typename BindingsSExpr, typename BodyExpr, typename... RestBodyExprs>
+struct ExpandExpr<SList<SSymbol<let_label>, BindingsSExpr, BodyExpr, RestBodyExprs...>> {
+private:
+    using expanded_bindings = typename ExpandBindings<BindingsSExpr>::type;
+    using body_pack = typename ExpandExprPack<BodyExpr, RestBodyExprs...>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<expanded_bindings>::value,
+        expanded_bindings,
+        IfType_t<
+            IsReaderError<body_pack>::value,
+            body_pack,
+            SList<SSymbol<let_label>, expanded_bindings, typename MakeExpandedBody<body_pack>::type>
+        >
+    >;
+};
+
+template<typename... Parts>
+struct ExpandExpr<SList<SSymbol<let_label>, Parts...>> {
+    using type = ReaderError<msg_reader_invalid_let>;
+};
+
+template<typename Expr, typename... RestExprs>
+struct ExpandExpr<SList<SSymbol<begin_label>, Expr, RestExprs...>> {
+private:
+    using pack = typename ExpandExprPack<Expr, RestExprs...>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<pack>::value,
+        pack,
+        typename MakeExpandedBody<pack>::type
+    >;
+};
+
+template<>
+struct ExpandExpr<SList<SSymbol<begin_label>>> {
+    using type = ReaderError<msg_reader_invalid_begin>;
+};
+
+template<typename TailExpr>
+struct ExpandListExpr {
+    using type = SList<SSymbol<quote_label>, SList<>>;
+};
+
+template<typename HeadExpr, typename... TailExprs>
+struct ExpandListExpr<SList<HeadExpr, TailExprs...>> {
+private:
+    using expanded_head = typename ExpandExpr<HeadExpr>::type;
+    using expanded_tail = typename ExpandListExpr<SList<TailExprs...>>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<expanded_head>::value,
+        expanded_head,
+        IfType_t<
+            IsReaderError<expanded_tail>::value,
+            expanded_tail,
+            SList<SSymbol<cons_label>, expanded_head, expanded_tail>
+        >
+    >;
+};
+
+template<typename... Items>
+struct ExpandExpr<SList<SSymbol<list_label>, Items...>> {
+    using type = typename ExpandListExpr<SList<Items...>>::type;
+};
+
+template<typename Clause>
+struct ExpandCondClause;
+
+template<typename Test, typename Expr, typename... RestExprs>
+struct ExpandCondClause<SList<Test, Expr, RestExprs...>> {
+private:
+    using expanded_test = typename ExpandExpr<Test>::type;
+    using body_pack = typename ExpandExprPack<Expr, RestExprs...>::type;
+
+public:
+    using test = expanded_test;
+    using body = IfType_t<
+        IsReaderError<body_pack>::value,
+        body_pack,
+        typename MakeExpandedBody<body_pack>::type
+    >;
+};
+
+template<typename... Clauses>
+struct ExpandCondClauses;
+
+template<>
+struct ExpandCondClauses<> {
+    using type = ReaderContext<cond_label, ReaderError<msg_reader_missing_else>>;
+};
+
+template<typename Expr, typename... RestExprs>
+struct ExpandCondClauses<SList<SSymbol<else_label>, Expr, RestExprs...>> {
+private:
+    using body_pack = typename ExpandExprPack<Expr, RestExprs...>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<body_pack>::value,
+        body_pack,
+        typename MakeExpandedBody<body_pack>::type
+    >;
+};
+
+template<typename... RestClauses>
+struct ExpandCondClauses<SList<SSymbol<else_label>>, RestClauses...> {
+    using type = ReaderContext<cond_label, ReaderError<msg_reader_invalid_cond>>;
+};
+
+template<typename Test, typename Expr, typename... RestExprs, typename... RestClauses>
+struct ExpandCondClauses<SList<Test, Expr, RestExprs...>, RestClauses...> {
+private:
+    using clause = ExpandCondClause<SList<Test, Expr, RestExprs...>>;
+    using next = typename ExpandCondClauses<RestClauses...>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<typename clause::test>::value,
+        typename clause::test,
+        IfType_t<
+            IsReaderError<typename clause::body>::value,
+            typename clause::body,
+            IfType_t<
+                IsReaderError<next>::value,
+                next,
+                SList<SSymbol<if_label>, typename clause::test, typename clause::body, next>
+            >
+        >
+    >;
+};
+
+template<typename... Clauses>
+struct ExpandExpr<SList<SSymbol<cond_label>, Clauses...>> {
+    using type = typename ExpandCondClauses<Clauses...>::type;
+};
+
+template<>
+struct ExpandExpr<SList<SSymbol<cond_label>>> {
+    using type = ReaderContext<cond_label, ReaderError<msg_reader_invalid_cond>>;
+};
+
+template<typename Name, typename Expr>
+struct ExpandTopLevelForm<SList<SSymbol<define_label>, SSymbol<Name>, Expr>> {
+private:
+    using expanded_expr = typename ExpandExpr<Expr>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<expanded_expr>::value,
+        expanded_expr,
+        SList<SSymbol<define_label>, SSymbol<Name>, expanded_expr>
+    >;
+};
+
+template<typename Name, typename... ParamsT, typename BodyExpr, typename... RestBodyExprs>
+struct ExpandTopLevelForm<SList<SSymbol<define_label>, SList<SSymbol<Name>, ParamsT...>, BodyExpr, RestBodyExprs...>> {
+private:
+    using body_pack = typename ExpandExprPack<BodyExpr, RestBodyExprs...>::type;
+    using lambda_expr = IfType_t<
+        IsReaderError<body_pack>::value,
+        body_pack,
+        SList<SSymbol<lambda_label>, SList<ParamsT...>, typename MakeExpandedBody<body_pack>::type>
+    >;
+
+public:
+    using type = IfType_t<
+        IsReaderError<lambda_expr>::value,
+        lambda_expr,
+        SList<SSymbol<define_label>, SSymbol<Name>, lambda_expr>
+    >;
+};
+
+template<typename... Parts>
+struct ExpandTopLevelForm<SList<SSymbol<define_label>, Parts...>> {
+    using type = ReaderContext<define_label, ReaderError<msg_reader_invalid_define>>;
+};
 
 template<typename SExpr>
 struct LowerExpr;
@@ -463,6 +964,12 @@ template<> struct PrimitiveOf<String<'s', 't', 'r', 'i', 'n', 'g', '-', 'c', 'o'
 template<> struct PrimitiveOf<String<'s', 't', 'r', 'i', 'n', 'g', '-', 'p', 'r', 'e', 'f', 'i', 'x', '?'> > { using type = StringStartsWith; };
 template<> struct PrimitiveOf<String<'s', 't', 'r', 'i', 'n', 'g', '-', 't', 'a', 'k', 'e'> > { using type = StringTake; };
 template<> struct PrimitiveOf<String<'s', 't', 'r', 'i', 'n', 'g', '-', 'd', 'r', 'o', 'p'> > { using type = StringDrop; };
+template<> struct PrimitiveOf<String<'c', 'o', 'n', 's'> > { using type = Cons; };
+template<> struct PrimitiveOf<String<'h', 'e', 'a', 'd'> > { using type = Head; };
+template<> struct PrimitiveOf<String<'t', 'a', 'i', 'l'> > { using type = Tail; };
+template<> struct PrimitiveOf<String<'e', 'm', 'p', 't', 'y', '?'> > { using type = IsEmpty; };
+template<> struct PrimitiveOf<String<'c', 'o', 'n', 'c', 'a', 't'> > { using type = Concat; };
+template<> struct PrimitiveOf<String<'r', 'e', 'v', 'e', 'r', 's', 'e'> > { using type = Reverse; };
 template<> struct PrimitiveOf<String<'l', 'e', 'n', 'g', 't', 'h'> > { using type = Length; };
 template<> struct PrimitiveOf<String<'s', 'e', 't', '-', 'i', 'n', 's', 'e', 'r', 't'> > { using type = SetInsert; };
 template<> struct PrimitiveOf<String<'s', 'e', 't', '-', 'c', 'o', 'n', 't', 'a', 'i', 'n', 's'> > { using type = SetContains; };
@@ -519,6 +1026,11 @@ struct WrapLoweredType<ReaderError<Message>, Container> {
     using type = ReaderError<Message>;
 };
 
+template<typename Frame, typename Inner, template<typename> class Container>
+struct WrapLoweredType<ErrorContext<Frame, Inner>, Container> {
+    using type = ErrorContext<Frame, Inner>;
+};
+
 template<>
 struct LowerType<SSymbol<String<'N', 'a', 't'>>> {
     using type = NatType;
@@ -547,6 +1059,11 @@ struct LowerType<SSymbol<String<'N', 'o', 'n', 'e'>>> {
 template<>
 struct LowerType<SSymbol<String<'A', 'n', 'y'>>> {
     using type = AnyType;
+};
+
+template<>
+struct LowerType<SSymbol<infer_label>> {
+    using type = InferType;
 };
 
 template<>
@@ -675,7 +1192,7 @@ struct LowerParam {
 
 template<typename Name>
 struct LowerParam<SSymbol<Name>> {
-    using type = Param<Symbol<Name>, AnyType>;
+    using type = Param<Symbol<Name>, InferType>;
 };
 
 template<typename Name, typename TypeSExpr>
@@ -788,9 +1305,17 @@ private:
 
 public:
     using type = IfType_t<
-        IsSame<primitive, void>::value,
-        Ref<Symbol<Name>>,
-        primitive
+        IsSame<Name, nil_label>::value,
+        List<>,
+        IfType_t<
+            IsSame<Name, none_label>::value,
+            None,
+            IfType_t<
+                IsSame<primitive, void>::value,
+                Ref<Symbol<Name>>,
+                primitive
+            >
+        >
     >;
 };
 
@@ -815,7 +1340,7 @@ struct LowerExpr<SList<>> {
 };
 
 template<typename Cond, typename ThenExpr, typename ElseExpr>
-struct LowerExpr<SList<SSymbol<String<'i', 'f'>>, Cond, ThenExpr, ElseExpr>> {
+struct LowerExpr<SList<SSymbol<if_label>, Cond, ThenExpr, ElseExpr>> {
 private:
     using lowered_cond = typename LowerExpr<Cond>::type;
     using lowered_then = typename LowerExpr<ThenExpr>::type;
@@ -838,15 +1363,15 @@ public:
 };
 
 template<typename... Parts>
-struct LowerExpr<SList<SSymbol<String<'i', 'f'>>, Parts...>> {
+struct LowerExpr<SList<SSymbol<if_label>, Parts...>> {
     using type = ReaderError<msg_reader_invalid_if>;
 };
 
-template<typename ParamsSExpr, typename BodyExpr, typename... RestBodyExprs>
-struct LowerExpr<SList<SSymbol<String<'l', 'a', 'm', 'b', 'd', 'a'>>, ParamsSExpr, BodyExpr, RestBodyExprs...>> {
+template<typename ParamsSExpr, typename BodyExpr>
+struct LowerExpr<SList<SSymbol<lambda_label>, ParamsSExpr, BodyExpr>> {
 private:
     using params = typename LowerParams<ParamsSExpr>::type;
-    using body = typename LowerBody<BodyExpr, RestBodyExprs...>::type;
+    using body = typename LowerExpr<BodyExpr>::type;
 
 public:
     using type = IfType_t<
@@ -861,15 +1386,15 @@ public:
 };
 
 template<typename... Parts>
-struct LowerExpr<SList<SSymbol<String<'l', 'a', 'm', 'b', 'd', 'a'>>, Parts...>> {
+struct LowerExpr<SList<SSymbol<lambda_label>, Parts...>> {
     using type = ReaderError<msg_reader_invalid_lambda>;
 };
 
-template<typename BindingsSExpr, typename BodyExpr, typename... RestBodyExprs>
-struct LowerExpr<SList<SSymbol<String<'l', 'e', 't'>>, BindingsSExpr, BodyExpr, RestBodyExprs...>> {
+template<typename BindingsSExpr, typename BodyExpr>
+struct LowerExpr<SList<SSymbol<let_label>, BindingsSExpr, BodyExpr>> {
 private:
     using bindings = typename LowerBindings<BindingsSExpr>::type;
-    using body = typename LowerBody<BodyExpr, RestBodyExprs...>::type;
+    using body = typename LowerExpr<BodyExpr>::type;
 
 public:
     using type = IfType_t<
@@ -884,22 +1409,22 @@ public:
 };
 
 template<typename... Parts>
-struct LowerExpr<SList<SSymbol<String<'l', 'e', 't'>>, Parts...>> {
+struct LowerExpr<SList<SSymbol<let_label>, Parts...>> {
     using type = ReaderError<msg_reader_invalid_let>;
 };
 
 template<typename Expr, typename... RestExprs>
-struct LowerExpr<SList<SSymbol<String<'b', 'e', 'g', 'i', 'n'>>, Expr, RestExprs...>> {
+struct LowerExpr<SList<SSymbol<begin_label>, Expr, RestExprs...>> {
     using type = typename LowerBody<Expr, RestExprs...>::type;
 };
 
 template<>
-struct LowerExpr<SList<SSymbol<String<'b', 'e', 'g', 'i', 'n'>>>> {
+struct LowerExpr<SList<SSymbol<begin_label>>> {
     using type = ReaderError<msg_reader_invalid_begin>;
 };
 
 template<typename Expr>
-struct LowerExpr<SList<SSymbol<String<'q', 'u', 'o', 't', 'e'>>, Expr>> {
+struct LowerExpr<SList<SSymbol<quote_label>, Expr>> {
 private:
     using quoted = typename QuoteValue<Expr>::type;
 
@@ -912,7 +1437,7 @@ public:
 };
 
 template<typename... Parts>
-struct LowerExpr<SList<SSymbol<String<'q', 'u', 'o', 't', 'e'>>, Parts...>> {
+struct LowerExpr<SList<SSymbol<quote_label>, Parts...>> {
     using type = ReaderError<msg_reader_invalid_quote>;
 };
 
@@ -929,14 +1454,113 @@ public:
     >;
 };
 
-template<typename ParsedProgram>
-struct ReadProgramDispatch {
-    using type = typename LowerExpr<ParsedProgram>::type;
+template<typename Form>
+struct LowerTopLevelForm {
+private:
+    using lowered_expr = typename LowerExpr<Form>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<lowered_expr>::value,
+        lowered_expr,
+        ExprForm<lowered_expr>
+    >;
 };
 
-template<typename Message>
-struct ReadProgramDispatch<ReaderError<Message>> {
-    using type = ReaderError<Message>;
+template<typename Name, typename Expr>
+struct LowerTopLevelForm<SList<SSymbol<define_label>, SSymbol<Name>, Expr>> {
+private:
+    using lowered_expr = typename LowerExpr<Expr>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<lowered_expr>::value,
+        lowered_expr,
+        DefineForm<Symbol<Name>, lowered_expr>
+    >;
+};
+
+template<typename Done, typename... Forms>
+struct LowerTopLevelFormsImpl;
+
+template<typename... Done>
+struct LowerTopLevelFormsImpl<TypeList<Done...>> {
+    using type = TypeList<Done...>;
+};
+
+template<bool Error, typename Current, typename Done, typename... Rest>
+struct LowerTopLevelFormsNext;
+
+template<typename Current, typename Done, typename... Rest>
+struct LowerTopLevelFormsNext<true, Current, Done, Rest...> {
+    using type = Current;
+};
+
+template<typename Current, typename... Done, typename... Rest>
+struct LowerTopLevelFormsNext<false, Current, TypeList<Done...>, Rest...> {
+    using type = typename LowerTopLevelFormsImpl<TypeList<Done..., Current>, Rest...>::type;
+};
+
+template<typename... Done, typename Form, typename... Rest>
+struct LowerTopLevelFormsImpl<TypeList<Done...>, Form, Rest...> {
+private:
+    using current = typename LowerTopLevelForm<Form>::type;
+
+public:
+    using type = typename LowerTopLevelFormsNext<
+        IsReaderError<current>::value,
+        current,
+        TypeList<Done...>,
+        Rest...
+    >::type;
+};
+
+template<typename LoweredForms>
+struct LowerProgramResult {
+    using type = ReaderError<msg_invalid_program>;
+};
+
+template<typename Expr>
+struct LowerProgramResult<TypeList<ExprForm<Expr>>> {
+    using type = Expr;
+};
+
+template<typename Name, typename Expr>
+struct LowerProgramResult<TypeList<DefineForm<Name, Expr>>> {
+    using type = ProgramExpr<DefineForm<Name, Expr>>;
+};
+
+template<typename... Forms>
+struct LowerProgramResult<TypeList<Forms...>> {
+    using type = ProgramExpr<Forms...>;
+};
+
+template<typename ExpandedProgram>
+struct LowerExpandedProgram {
+    using type = ReaderError<msg_invalid_program>;
+};
+
+template<typename... Forms>
+struct LowerExpandedProgram<SProgram<Forms...>> {
+private:
+    using lowered_forms = typename LowerTopLevelFormsImpl<TypeList<>, Forms...>::type;
+
+public:
+    using type = IfType_t<
+        IsReaderError<lowered_forms>::value,
+        lowered_forms,
+        typename LowerProgramResult<lowered_forms>::type
+    >;
+};
+
+template<typename ParsedProgram>
+struct ReadProgramDispatch {
+    using expanded = typename ExpandProgramDispatch<ParsedProgram>::type;
+    using type = IfType_t<
+        IsReaderError<expanded>::value,
+        expanded,
+        typename LowerExpandedProgram<expanded>::type
+    >;
 };
 
 template<typename Program>
@@ -946,6 +1570,15 @@ private:
 
 public:
     using type = typename ReadProgramDispatch<parsed>::type;
+};
+
+template<typename Program>
+struct ExpandSourceProgram {
+private:
+    using parsed = ParseProgram_t<Program>;
+
+public:
+    using type = typename ExpandProgramDispatch<parsed>::type;
 };
 
 template<typename Program>
@@ -965,12 +1598,17 @@ template<typename Program>
 struct ReadTypeCheck {
 private:
     using parsed = typename ReadProgram<Program>::type;
+    using checked = IfType_t<
+        IsReaderError<parsed>::value,
+        parsed,
+        TypeCheck_t<parsed>
+    >;
 
 public:
     using type = IfType_t<
         IsReaderError<parsed>::value,
         parsed,
-        TypeCheck_t<parsed>
+        FinalizeInferredType_t<checked>
     >;
 };
 
@@ -984,6 +1622,9 @@ using ReadEval_t = typename reader_detail::ReadEval<Program>::type;
 
 template<typename Program>
 using ReadTypeCheck_t = typename reader_detail::ReadTypeCheck<Program>::type;
+
+template<typename Program>
+using ExpandProgram_t = typename reader_detail::ExpandSourceProgram<Program>::type;
 
 template<std::size_t N>
 struct fixed_string {
@@ -1017,5 +1658,8 @@ using ReadSourceEval_t = ReadEval_t<literal_string_t<Source>>;
 
 template<fixed_string Source>
 using ReadSourceTypeCheck_t = ReadTypeCheck_t<literal_string_t<Source>>;
+
+template<fixed_string Source>
+using ExpandSource_t = ExpandProgram_t<literal_string_t<Source>>;
 
 } // namespace lc

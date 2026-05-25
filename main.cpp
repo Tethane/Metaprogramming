@@ -63,5 +63,10 @@ int main() {
     std::cout << "reader untyped identity result: " << lc::to_int_v<lc::ReaderUntypedIdentityResult> << "\n";
     std::cout << "reader comment program result: " << lc::to_string_view_v<lc::ReaderCommentResult> << "\n";
     std::cout << "reader escaped string pretty: " << lc::pretty_string_view_v<lc::ReaderEscapedStringResult> << "\n";
+    std::cout << "reader factorial via define/cond: " << lc::to_int_v<lc::ReaderDefinedFactorialResult> << "\n";
+    std::cout << "reader list inference result: " << lc::to_int_v<lc::ReaderListInferenceResult> << "\n";
+    std::cout << "reader list expansion: " << lc::pretty_string_view_v<lc::ReaderExpandList> << "\n";
+    std::cout << "reader cond expansion: " << lc::pretty_string_view_v<lc::ReaderExpandCond> << "\n";
+    std::cout << "reader recursive value define error: " << lc::pretty_string_view_v<lc::ReaderRecursiveValueDefineError> << "\n";
     std::cout << "reader parse error pretty: " << lc::pretty_string_view_v<lc::ReadSource_t<"(+ 1 2">> << "\n";
 }
