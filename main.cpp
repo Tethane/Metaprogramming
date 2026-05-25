@@ -1,79 +1,19 @@
+#include <iostream>
+
 #include "lambda.hpp"
 
-using namespace lc;
-
 int main() {
-    static_assert(IsSame<Normalize_t<App<I, A>>, A>::value);
+    constexpr auto primes = lc::to_array_v<lc::PrimesUpTo50>;
 
-    static_assert(IsSame<
-        Normalize_t<Apply_t<K, A, B>>,
-        A
-    >::value);
+    std::cout << "primes up to 50: [";
+    for (std::size_t i = 0; i < primes.size(); ++i) {
+        if (i != 0) {
+            std::cout << ", ";
+        }
+        std::cout << primes[i];
+    }
+    std::cout << "]\n";
 
-    static_assert(IsSame<
-        Normalize_t<Apply_t<KI, A, B>>,
-        B
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<Apply_t<S, K, K, A>>,
-        A
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<Apply_t<True, A, B>>,
-        A
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<Apply_t<False, A, B>>,
-        B
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<Apply_t<If, True, A, B>>,
-        A
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<Apply_t<If, False, A, B>>,
-        B
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<Apply_t<Succ, Zero>>,
-        One
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<Apply_t<Add, One, Two>>,
-        Three
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<Apply_t<Mul, Two, Two>>,
-        Four
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<O, 16>,
-        CycleDetected<O>
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<Apply_t<Factorial, Zero>, 1024>,
-        One
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<Apply_t<Factorial, Two>, 4096>,
-        Two
-    >::value);
-
-    static_assert(IsSame<
-        Normalize_t<Apply_t<Foldr, Add, Zero, ListOneTwoThree>, 20000>,
-        Six
-    >::value);
-
-    return 0;
+    std::cout << "count: " << lc::to_int_v<lc::PrimeCountUpTo50> << "\n";
+    std::cout << "sum: " << lc::to_int_v<lc::PrimeSumUpTo50> << "\n";
 }
