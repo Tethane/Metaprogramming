@@ -1,122 +1,330 @@
 # Lambda Calculus Metaprogramming in C++
 
-This repository is a header-only C++20 library for doing computation through type-level lambda calculus machinery.
+This repository is an experiment in treating the C++ type system as a computation engine.
 
-At its core, it has:
+At the center of the project is a small lambda-calculus evaluator built with templates. On top of that core, the library adds pragmatic intrinsic values, a typed Lisp-like front-end, a compile-time reader, pretty-printers, and a standard library of algorithms and data operations. The result is a header-only C++20 system that can reduce lambda terms, evaluate higher-level functional programs, and materialize useful results entirely at compile time.
 
-- a De Bruijn-indexed lambda AST
-- capture-avoiding shift and substitution
-- a normal-order reducer with bounded fuel
-- an opt-in checked normalizer for exact cycle detection
-- a hybrid standard library with intrinsic naturals, signed integers, booleans, strings, sets, maps, and lists for practical compile-time performance
+## What Lambda Calculus Is
 
-The result is a small compile-time language runtime built with templates. It still reduces programs by type substitution and application, but it avoids the worst Church-encoding blowups for arithmetic and collection-heavy code.
+Lambda calculus is one of the simplest models of computation ever studied. It has only a few ideas:
 
-## Why This Exists
+- variables
+- anonymous functions
+- function application
 
-Pure lambda-calculus encodings are elegant, but they get expensive very quickly in C++ template metaprogramming. This project takes a pragmatic approach:
+In a tiny notation, the identity function is:
 
-- lambda terms, substitution, and beta reduction remain the computational foundation
-- performance-critical values use compact intrinsic forms like `Nat<5>`, `Int<-3>`, `String<'o', 'k'>`, `Set<...>`, `AssocMap<...>`, `Bool<true>`, and `List<...>`
-- primitive operations such as `Add`, `Map`, `Filter`, and `Range` reduce directly when their arguments are intrinsic values
+```text
+λx. x
+```
 
-That gives you something that still feels like a tiny lambda-calculus computer, but can also run more interesting compile-time programs.
+and applying it to `y` is:
 
-## Features
+```text
+(λx. x) y
+```
 
-- Header-only library
-- Variadic application spine via `Call<...>` to avoid deeply nested binary application trees
-- Fast default normalization with `Normalize_t<T, Fuel>`
-- Exact repeated-term cycle detection with `NormalizeChecked_t<T, Fuel>`
-- Typed Lisp-style front-end with lexical environments and closures
-- Pretty-printing for values, types, Lisp AST nodes, and core lambda terms
-- Named surface syntax compiler with `var`, `lam`, `app`, and `free`
-- Standard library for:
-  - combinators: `I`, `K`, `KI`, `S`, `B`, `C`, `W`, `Y`
-  - booleans: `True`, `False`, `If`, `Not`, `And`, `Or`
-  - numbers: `Nat<N>`, `Int<N>`, `Zero` through `Twelve`, `NegOne` through `NegFive`, `Succ`, `Pred`, `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Pow`, `Eq`, `Lt`, `Lte`, `Gt`, `Gte`, `IsZero`
-  - strings: `String<...>`, `StringConcat`, `StringLength`, `StringEq`, `StringContains`, `StringStartsWith`, `StringTake`, `StringDrop`
-  - sets: `Set<...>`, `SetInsert`, `SetContains`, `SetErase`, `SetUnion`, `SetIntersection`, `SetSize`
-  - maps: `AssocMap<...>`, `Entry<K, V>`, `MapInsert`, `MapFind`, `MapContainsKey`, `MapErase`, `MapSize`
-  - lists: `Nil`, `Cons`, `Head`, `Tail`, `IsEmpty`, `Concat`, `Reverse`, `Length`, `Range`, `Map`, `Filter`, `Foldl`, `Foldr`, `Sum`, `Product`, `Any`, `All`
-- Example algorithms: `Sieve`, `TwoSum`, `MaxSubarraySum`, `ThreeSum`
-- Legacy pure encodings preserved under `lc::church`
-- Runtime bridge helpers for turning compile-time results into ordinary values
+which reduces to:
 
-## Repo Layout
+```text
+y
+```
+
+That reduction step is called beta reduction. In the pure lambda calculus, all computation is built out of repeatedly substituting arguments into function bodies. Numbers, booleans, conditionals, pairs, and lists can all be encoded with functions alone.
+
+That idea matters because it reveals something deep: computation does not fundamentally require “machine instructions” in the everyday sense. It can emerge from a tiny symbolic rewriting system.
+
+## Why Do This In C++ Templates
+
+C++ templates are usually introduced as a generic programming feature, but they also form a compile-time symbolic engine:
+
+- types can represent programs and values
+- template instantiation can represent evaluation
+- specialization can represent rewrite rules
+- recursive aliases can represent reduction
+
+This project explores that boundary deliberately. It asks:
+
+- how far can we push C++ templates as a computational substrate?
+- what happens if we build a small functional language inside the type system?
+- where does pure lambda calculus become impractical, and what compromises are worth making?
+
+The answer here is a hybrid design: keep substitution and application as the conceptual core, but introduce compact intrinsic value forms where pure Church encodings would be too expensive to use comfortably.
+
+## Project Philosophy
+
+This is not trying to be “pure” at all costs. It is trying to be intellectually honest, technically interesting, and actually usable.
+
+The core ideas are:
+
+- lambda substitution is still the heart of evaluation
+- normal-order reduction still matters
+- De Bruijn indexing keeps binding precise
+- compact intrinsic values make nontrivial compile-time programs feasible
+- a Lisp-like surface makes the system easier to interact with
+
+So this is both:
+
+- a lambda-calculus playground
+- a serious metaprogramming experiment in abstract computation
+
+## What The Library Contains
+
+- A core lambda AST with `Var`, `Lambda`, `App`, `Call`, and `Free`
+- Capture-avoiding shift and substitution
+- Fuel-bounded normalization and optional checked normalization with cycle detection
+- Intrinsic compile-time values:
+  - `Nat<N>`
+  - `Int<N>`
+  - `Bool<B>`
+  - `String<Chars...>`
+  - `List<Ts...>`
+  - `Set<Ts...>`
+  - `AssocMap<Entries...>`
+- Primitive reducers for arithmetic, comparisons, strings, lists, sets, and maps
+- A typed Lisp-like AST with environments, closures, and typechecking
+- A compile-time reader from source strings to Lisp AST
+- Pretty-printers for values, types, lambda terms, Lisp forms, and errors
+- A standard library with combinators and example algorithms
+- Runtime bridge helpers so compile-time results can be printed from ordinary C++
+
+## System Architecture
+
+```mermaid
+flowchart TD
+    A[Source String<br/>ReadSource_t] --> B[Reader Layer<br/>reader.hpp]
+    B --> C[S-Expression AST<br/>SSymbol SList SInt SStringLit]
+    C --> D[Lisp Front-End<br/>lisp.hpp]
+    D --> E[Typechecker<br/>TypeCheck_t]
+    D --> F[Evaluator<br/>EvalLisp_t]
+    F --> G[Core Lambda / Hybrid Terms<br/>core.hpp]
+    G --> H[Reducer<br/>eval.hpp]
+    H --> I[Primitive Intrinsics<br/>intrinsics.hpp]
+    I --> J[Normalized Compile-Time Values<br/>Nat Int Bool String List Set AssocMap]
+    J --> K[Pretty Printers<br/>pretty.hpp]
+    J --> L[Runtime Bridge<br/>runtime.hpp]
+    M[Named Surface Syntax<br/>var lam app free] --> G
+    N[Standard Library<br/>std.hpp] --> D
+    N --> G
+    N --> I
+    L --> O[main.cpp Demo Output]
+    K --> O
+```
+
+## Layer By Layer
+
+### 1. Core lambda machinery
+
+The lowest layer models terms directly:
+
+- `Var<N>`
+- `Lambda<Body>`
+- `App<F, A>`
+- `Call<Head, Args...>`
+- `Free<Name>`
+
+The evaluator canonicalizes applications into `Call<...>` spines, performs substitution safely, and reduces terms in a normal-order style.
+
+This is the most “lambda calculus” part of the repository.
+
+### 2. Hybrid intrinsic values
+
+Pure lambda-calculus encodings are elegant, but in C++ templates they grow extremely fast. Church numerals, for example, are mathematically beautiful and mechanically punishing.
+
+So this library introduces compact value forms:
+
+- `Nat<5>` instead of a huge Church numeral
+- `Int<-3>` for signed arithmetic
+- `String<'o', 'k'>` for compile-time text
+- `List<...>`, `Set<...>`, and `AssocMap<...>` for structured data
+
+Primitive heads such as `Add`, `Mul`, `Range`, `Map`, `StringConcat`, `SetUnion`, and `MapFind` reduce directly when given intrinsic values.
+
+This is the main optimization strategy of the project: still compute through symbolic reduction, but keep the data representation compact enough to survive real compile-time workloads.
+
+### 3. Lisp-like front-end
+
+Above the core sits a higher-level language layer in [include/lc/lisp.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/lisp.hpp).
+
+It introduces:
+
+- `Ref<Name>`
+- `LambdaExpr<Params<...>, Body>`
+- `CallExpr<Fn, Args...>`
+- `LetExpr<Bindings<...>, Body>`
+- `IfExpr<Cond, Then, Else>`
+- `BeginExpr<...>`
+- `Closure<Params, Body, Env>`
+
+This layer formalizes lexical environments and closures so programs can be written more like Lisp and less like raw De Bruijn terms.
+
+### 4. Reader layer
+
+The reader in [include/lc/reader.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/reader.hpp) turns source strings into typed Lisp AST.
+
+It currently supports:
+
+- symbols
+- integers
+- booleans
+- strings with escapes
+- lists
+- quote sugar
+- line comments
+- `if`
+- `lambda`
+- `let`
+- `begin`
+- primitive calls
+
+That means we can now write source-level programs like:
+
+```cpp
+using Program = lc::ReadSource_t<
+    "(let ((x 10) (make (lambda ((y Int)) (lambda ((z Int)) (+ (+ x y) z))))) ((make 5) 7))"
+>;
+```
+
+instead of hand-assembling every AST node.
+
+### 5. Pretty-printing and runtime bridge
+
+Because type-level systems are hard to inspect, the library includes:
+
+- `Pretty_t<T>`
+- `pretty_string_view_v<T>`
+- `to_int_v<T>`
+- `to_bool_v<T>`
+- `to_string_view_v<T>`
+- `to_array_v<T>`
+- `to_matrix_v<T>`
+
+These make the compile-time world observable enough to debug and demo.
+
+## Repository Layout
 
 ```text
 lambda.hpp                Umbrella public header
 include/lc/core.hpp       Core AST, utilities, named syntax, public aliases
 include/lc/intrinsics.hpp Intrinsic values and primitive reductions
 include/lc/eval.hpp       Shift, substitution, stepping, normalization
-include/lc/lisp.hpp       Lisp-like AST, environments, closures, and typechecking
-include/lc/pretty.hpp     Pretty-printing and debug rendering
+include/lc/lisp.hpp       Lisp AST, closures, environments, typechecking
+include/lc/reader.hpp     Compile-time reader from strings to Lisp AST
+include/lc/pretty.hpp     Pretty-printers for terms, values, types, and errors
 include/lc/std.hpp        Standard library and example programs
-include/lc/runtime.hpp    Bridge from type-level results to runtime values
+include/lc/runtime.hpp    Runtime bridge for compile-time values
 main.cpp                  Demo program
 tests.cpp                 Static-assert based test suite
-Makefile                  Clang-focused build targets
+Makefile                  Clang-oriented build targets
 ```
 
-## Build And Run
+## Standard Library Overview
 
-This project is currently tuned for `clang++` and expects a reasonably modern Clang. The `Makefile` uses aggressive optimization flags for compile-time-heavy code:
+The library surface is intentionally broad because the point is to explore what nontrivial compile-time computation feels like.
 
-```bash
-make demo
-./bin/demo
-```
+### Combinators
 
-```bash
-make test
-```
+- `I`
+- `K`
+- `KI`
+- `S`
+- `B`
+- `C`
+- `W`
+- `Y`
 
-```bash
-make trace
-```
+### Booleans and control
 
-`trace` rebuilds with `-ftime-trace`, which is useful when you want to inspect where template-instantiation time is going.
+- `True`
+- `False`
+- `If`
+- `Not`
+- `And`
+- `Or`
 
-## Demo
+### Numbers
 
-The demo computes a sieve of Eratosthenes at compile time over the range `2..50`, then prints the result at runtime:
+- `Nat<N>`
+- `Int<N>`
+- `Zero` through `Twelve`
+- `NegOne` through `NegFive`
+- `Succ`
+- `Pred`
+- `Add`
+- `Sub`
+- `Mul`
+- `Div`
+- `Mod`
+- `Pow`
+- `Eq`
+- `Lt`
+- `Lte`
+- `Gt`
+- `Gte`
+- `IsZero`
 
-```text
-primes up to 50: [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47]
-count: 15
-sum: 328
-two-sum indices for [2, 7, 11, 15], target 9: [0, 1]
-maximum subarray sum for [-2, 1, -3, 4, -1, 2, 1, -5, 4]: 6
-three-sum triplets for [-4, -1, -1, 0, 1, 2]: [[-1, -1, 2], [-1, 0, 1]]
-string concat example: lambda calculus
-string prefix (take 6): lambda
-string contains "calc": true
-set union of {1, 3, 5} and {3, 4, 5}: [1, 3, 5, 4]
-set contains 4: true
-map lookup "answer": 42
-map contains "lucky": true
-lisp closure program: (let ((x 10) (make (lambda ((y Int)) (lambda ((z Int)) (+ (+ x y) z))))) ((make 5) 7))
-lisp closure result: 22
-lisp closure type: Int
-lisp string result: lambda runtime
-core lambda identity pretty: (lambda v0)
-```
+### Strings
 
-The relevant aliases live in [include/lc/std.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/std.hpp):
+- `String<...>`
+- `StringConcat`
+- `StringLength`
+- `StringEq`
+- `StringContains`
+- `StringStartsWith`
+- `StringTake`
+- `StringDrop`
 
-```cpp
-template<int Limit>
-using PrimesUpTo = Normalize_t<Apply_t<Sieve, Apply_t<Range, Two, Nat<Limit>>>, 1024>;
+### Lists
 
-using PrimesUpTo50 = PrimesUpTo<50>;
-using PrimeCountUpTo50 = Normalize_t<Apply_t<Length, PrimesUpTo50>>;
-using PrimeSumUpTo50 = Normalize_t<Apply_t<Sum, PrimesUpTo50>>;
-```
+- `Nil`
+- `Cons`
+- `Head`
+- `Tail`
+- `IsEmpty`
+- `Concat`
+- `Reverse`
+- `Length`
+- `Range`
+- `Map`
+- `Filter`
+- `Foldl`
+- `Foldr`
+- `Sum`
+- `Product`
+- `Any`
+- `All`
+
+### Sets
+
+- `Set<...>`
+- `SetInsert`
+- `SetContains`
+- `SetErase`
+- `SetUnion`
+- `SetIntersection`
+- `SetSize`
+
+### Maps
+
+- `AssocMap<...>`
+- `Entry<K, V>`
+- `MapInsert`
+- `MapFind`
+- `MapContainsKey`
+- `MapErase`
+- `MapSize`
+
+### Example algorithms
+
+- `Sieve`
+- `TwoSum`
+- `MaxSubarraySum`
+- `ThreeSum`
+- `Factorial`
 
 ## Quick Examples
 
-### 1. Reducing a lambda term
+### Core lambda reduction
 
 ```cpp
 #include "lambda.hpp"
@@ -127,7 +335,7 @@ static_assert(IsSame<Normalize_t<Apply_t<I, A>>, A>::value);
 static_assert(IsSame<Normalize_t<Apply_t<S, K, K, A>>, A>::value);
 ```
 
-### 2. Arithmetic on intrinsic naturals
+### Intrinsic arithmetic
 
 ```cpp
 #include "lambda.hpp"
@@ -139,7 +347,7 @@ static_assert(IsSame<Normalize_t<Apply_t<Mul, Three, Four>>, Twelve>::value);
 static_assert(IsSame<Normalize_t<Apply_t<Pow, Three, Two>>, Nine>::value);
 ```
 
-### 3. Functional list processing
+### Functional list processing
 
 ```cpp
 #include "lambda.hpp"
@@ -160,18 +368,41 @@ static_assert(IsSame<
 >::value);
 ```
 
-### 4. Named surface syntax
+### Source-level reader example
 
 ```cpp
 #include "lambda.hpp"
 
 using namespace lc;
 
-static_assert(IsSame<Compile_t<lam<x, var<x>>>, I>::value);
-static_assert(IsSame<Run_t<app<lam<x, var<x>>, free<a>>>, A>::value);
+using Program = ReadSource_t<
+    "(let ((x 10) (make (lambda ((y Int)) (lambda ((z Int)) (+ (+ x y) z))))) ((make 5) 7))"
+>;
+
+static_assert(IsSame<EvalLisp_t<Program>, Int<22>>::value);
+static_assert(IsSame<TypeCheck_t<Program>, IntType>::value);
 ```
 
-### 5. Classic interview problems
+### Reader features
+
+```cpp
+#include "lambda.hpp"
+
+using namespace lc;
+
+using Untyped = ReadSource_t<"((lambda (x) x) 42)">;
+using Quoted = ReadSourceEval_t<"'(1 2 3)">;
+using WithComment = ReadSourceEval_t<R"(
+  (begin
+    ; comments are ignored
+    ((lambda (msg) (string-append msg " reader")) "lambda"))
+)">;
+
+static_assert(IsSame<EvalLisp_t<Untyped>, Int<42>>::value);
+static_assert(IsSame<Quoted, List<Int<1>, Int<2>, Int<3>>>::value);
+```
+
+### Classic algorithms at compile time
 
 ```cpp
 #include "lambda.hpp"
@@ -187,123 +418,19 @@ static_assert(IsSame<
     Normalize_t<Apply_t<MaxSubarraySum, List<NegTwo, Int<1>, NegThree, Int<4>, NegOne, Int<2>, Int<1>, NegFive, Int<4>>>>,
     Int<6>
 >::value);
-
-static_assert(IsSame<
-    Normalize_t<Apply_t<ThreeSum, List<NegFour, NegOne, NegOne, Int<0>, Int<1>, Int<2>>>>,
-    List<List<NegOne, NegOne, Int<2>>, List<NegOne, Int<0>, Int<1>>>
->::value);
 ```
-
-### 6. Strings, sets, and maps
-
-```cpp
-#include "lambda.hpp"
-
-using namespace lc;
-
-using Greeting = Normalize_t<
-    Apply_t<StringConcat, String<'l', 'a', 'm', 'b', 'd', 'a'>, String<' ', 'r', 'u', 'n', 't', 'i', 'm', 'e'>>
->;
-
-static_assert(IsSame<Greeting, String<'l', 'a', 'm', 'b', 'd', 'a', ' ', 'r', 'u', 'n', 't', 'i', 'm', 'e'>>::value);
-static_assert(IsSame<Normalize_t<Apply_t<StringContains, Greeting, String<'r', 'u', 'n'>>>, True>::value);
-
-using ExampleSet = Normalize_t<Apply_t<SetUnion, Set<One, Three>, Set<Three, Four>>>;
-static_assert(IsSame<ExampleSet, Set<One, Three, Four>>::value);
-
-using ExampleMap =
-    Normalize_t<Apply_t<MapInsert,
-        Normalize_t<Apply_t<MapInsert, AssocMap<>, String<'x'>, Int<10>>>,
-        String<'y'>,
-        Int<20>
-    >>;
-
-static_assert(IsSame<Normalize_t<Apply_t<MapFind, ExampleMap, String<'x'>>>, Int<10>>::value);
-```
-
-### 7. Typed Lisp with closures
-
-```cpp
-#include "lambda.hpp"
-
-using namespace lc;
-
-using Program =
-    LetExpr<
-        Bindings<
-            Binding<Sym<'x'>, Int<10>>,
-            Binding<
-                Sym<'m', 'a', 'k', 'e'>,
-                LambdaExpr<
-                    Params<Param<Sym<'y'>, IntType>>,
-                    LambdaExpr<
-                        Params<Param<Sym<'z'>, IntType>>,
-                        CallExpr<Add, CallExpr<Add, Ref<Sym<'x'>>, Ref<Sym<'y'>>>, Ref<Sym<'z'>>>
-                    >
-                >
-            >
-        >,
-        CallExpr<CallExpr<Ref<Sym<'m', 'a', 'k', 'e'>>, Int<5>>, Int<7>>
-    >;
-
-static_assert(IsSame<EvalLisp_t<Program>, Int<22>>::value);
-static_assert(IsSame<TypeCheck_t<Program>, IntType>::value);
-static_assert(pretty_string_view_v<Program> == "(let ((x 10) (make (lambda ((y Int)) (lambda ((z Int)) (+ (+ x y) z))))) ((make 5) 7))");
-```
-
-## Core Mental Model
-
-There are three layers to keep in mind:
-
-### 1. Core lambda terms
-
-The evaluator understands:
-
-- `Var<N>`
-- `Lambda<Body>`
-- `App<F, A>`
-- `Call<Head, Args...>`
-- `Free<Name>`
-
-The reducer canonicalizes application into `Call<...>`, then performs normal-order reduction. If the head of a call is a lambda, it beta-reduces through substitution. If the head is an intrinsic primitive like `Add` or `Map`, it can collapse directly when the arguments are intrinsic values.
-
-### 2. Intrinsic values
-
-These are compact data forms that make the system practical:
-
-- `Nat<N>`
-- `Int<N>`
-- `Bool<B>`
-- `String<Chars...>`
-- `List<Ts...>`
-- `Set<Ts...>`
-- `AssocMap<Entries...>`
-- Lisp AST nodes like `Ref<...>`, `LambdaExpr<...>`, `CallExpr<...>`, `LetExpr<...>`
-
-They are still manipulated by the evaluator, but they avoid the AST explosion of large Church-encoded data.
-
-### 3. Surface syntax
-
-For readability, named expressions can be written as:
-
-- `var<x>`
-- `lam<x, Body>`
-- `app<F, A>`
-- `free<a>`
-
-They compile into the De Bruijn core with `Compile_t`.
 
 ## Normalization Modes
 
-### Fast default
+### Fast default normalization
 
 ```cpp
 using Result = Normalize_t<MyTerm, 1024>;
 ```
 
-This is fuel-bounded and optimized for getting useful work done.
+This is the default practical mode. It is fuel-bounded and optimized for getting useful work done.
 
-If reduction does not finish before fuel runs out, the result is:
+If the evaluator runs out of steps, you get:
 
 ```cpp
 OutOfFuel<Term>
@@ -315,78 +442,143 @@ OutOfFuel<Term>
 using Result = NormalizeChecked_t<MyTerm, 1024>;
 ```
 
-This mode tracks previously seen terms and can detect exact syntactic cycles:
+This mode keeps track of previously seen terms and can detect exact syntactic cycles:
 
 ```cpp
 static_assert(IsSame<NormalizeChecked_t<O, 16>, CycleDetected<O>>::value);
 ```
 
-Use this when debugging nontermination or verifying pathological terms. It is intentionally more expensive.
+It is slower, but excellent for debugging nontermination.
 
-## Runtime Bridge Helpers
+## Demo Program
 
-The library includes a small bridge for moving useful compile-time results into normal runtime code:
+The demo in [main.cpp](/home/ethan/dev/fun/metaprogramming/main.cpp) shows that the library is not just evaluating toy combinators. It computes:
 
-```cpp
-to_int_v<Nat<42>>
-to_int_v<Int<-7>>
-to_bool_v<Bool<true>>
-to_string_view_v<String<'o', 'k'>>
-to_array_v<List<Nat<1>, Nat<2>, Nat<3>>>
-to_array_v<Set<Nat<1>, Nat<3>, Nat<5>>>
-to_matrix_v<List<List<Int<-1>, Int<0>, Int<1>>>>
-pretty_string_view_v<LispIdentity>
+- a compile-time sieve of Eratosthenes
+- two-sum
+- maximum subarray sum
+- three-sum
+- string operations
+- set and map operations
+- closure-based Lisp programs
+- reader-driven source programs
+- pretty-printed parse errors
+
+Typical output:
+
+```text
+primes up to 50: [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47]
+count: 15
+sum: 328
+two-sum indices for [2, 7, 11, 15], target 9: [0, 1]
+maximum subarray sum for [-2, 1, -3, 4, -1, 2, 1, -5, 4]: 6
+three-sum triplets for [-4, -1, -1, 0, 1, 2]: [[-1, -1, 2], [-1, 0, 1]]
+string concat example: lambda calculus
+set union of {1, 3, 5} and {3, 4, 5}: [1, 3, 5, 4]
+lisp closure result: 22
+reader parse error pretty: #<reader-error unterminated-list>
 ```
 
-That bridge is what powers the demo output in [main.cpp](/home/ethan/dev/fun/metaprogramming/main.cpp).
+## Build And Run
 
-## Legacy Church Encodings
+This project is currently Clang-first and tuned for compile-time-heavy workloads.
 
-The original pure lambda-calculus flavor is still present under `lc::church`.
+Build the demo:
 
-Examples:
+```bash
+make demo
+./bin/demo
+```
 
-- `lc::church::True`
-- `lc::church::False`
-- `lc::church::Zero`
-- `lc::church::Succ`
-- `lc::church::Add`
-- `lc::church::Mul`
-- `lc::church::ListNil`
-- `lc::church::ListCons`
+Run the test suite:
 
-These are useful if you want to experiment with the pure encodings or compare behavior against the hybrid model.
+```bash
+make test
+```
 
-## Testing
+Generate Clang time traces:
 
-The test suite in [tests.cpp](/home/ethan/dev/fun/metaprogramming/tests.cpp) uses `static_assert` heavily and covers:
+```bash
+make trace
+```
 
-- classic combinator reductions
-- shift and substitution behavior
-- surface-syntax compilation
-- intrinsic boolean and arithmetic operations
-- list transformations and folds
-- recursive programs such as factorial
-- fuel exhaustion vs checked cycle detection
-- compile-time sieve results
+The `trace` target enables `-ftime-trace`, which is helpful when you want to inspect template instantiation cost.
 
-Because the project is mostly type-level computation, successful compilation is the primary proof that the library works.
+## Testing Strategy
 
-## Notes And Tradeoffs
+The library is tested primarily with `static_assert` in [tests.cpp](/home/ethan/dev/fun/metaprogramming/tests.cpp). That matches the nature of the project: successful compilation is itself the proof that the compile-time computation succeeded.
 
-- This is intentionally Clang-first right now.
-- The library is header-only because the evaluator is template-based.
-- The project is not trying to be a pure theorem of lambda calculus at all costs; it is trying to be an enjoyable and capable compile-time metaprogramming playground.
-- Intrinsic data and primitive reducers are the main pragmatic compromise.
+The tests cover:
 
-## Where To Start
+- lambda combinators
+- substitution and shifting
+- surface syntax compilation
+- arithmetic and comparison primitives
+- strings, lists, sets, and maps
+- closure evaluation
+- typechecking
+- reader behavior
+- parse errors
+- fuel exhaustion and cycle detection
+- larger example programs like sieve and interview-style algorithms
 
-If you are new to the codebase, a good reading order is:
+## Legacy Pure Encodings
+
+The repository still keeps pure lambda-calculus encodings under `lc::church`.
+
+That namespace is useful if you want to:
+
+- compare the hybrid system against pure encodings
+- study classic Church-style definitions
+- experiment with the boundary between elegant theory and practical metaprogramming cost
+
+## Tradeoffs
+
+This project intentionally chooses a middle path.
+
+What it keeps from pure lambda calculus:
+
+- function application as a universal mechanism
+- substitution-based reduction
+- lexical binding discipline
+- functional style as the dominant abstraction
+
+What it bends for practicality:
+
+- intrinsic numbers instead of default Church numerals
+- intrinsic collections and strings
+- primitive reducers
+- typed front-end and reader layer
+
+That compromise is the whole point. It lets the repository explore abstract computation without giving up the ability to run interesting programs at compile time.
+
+## Where To Start Reading
+
+If you want to understand the codebase from the inside out, a good reading order is:
 
 1. [include/lc/core.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/core.hpp)
 2. [include/lc/eval.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/eval.hpp)
 3. [include/lc/intrinsics.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/intrinsics.hpp)
-4. [include/lc/std.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/std.hpp)
-5. [tests.cpp](/home/ethan/dev/fun/metaprogramming/tests.cpp)
+4. [include/lc/lisp.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/lisp.hpp)
+5. [include/lc/reader.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/reader.hpp)
+6. [include/lc/std.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/std.hpp)
+7. [tests.cpp](/home/ethan/dev/fun/metaprogramming/tests.cpp)
 
-That path gives you the core model first, then the practical extensions, then concrete examples.
+If you want to understand it from the outside in, start with:
+
+1. [main.cpp](/home/ethan/dev/fun/metaprogramming/main.cpp)
+2. [include/lc/std.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/std.hpp)
+3. [README.md](/home/ethan/dev/fun/metaprogramming/README.md)
+
+## Future Direction
+
+The current library is already close to a tiny compile-time Lisp environment, but there is plenty of room to grow:
+
+- more reader forms such as `define`, `cond`, and `list`
+- a richer top-level environment
+- type inference beyond explicit annotations
+- macros or staged transforms
+- more aggressive reduction optimizations
+- better diagnostics for deeply nested compile-time failures
+
+That makes this repository both a working system and an open-ended research playground.

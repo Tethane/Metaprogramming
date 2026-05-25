@@ -2,6 +2,7 @@ CXX := clang++
 CXXFLAGS := -std=c++20 -O3 -DNDEBUG -flto=thin -march=native -mtune=native -ftemplate-depth=16384 -Wall -Wextra -Wpedantic -I.
 BUILD_DIR := build
 BIN_DIR := bin
+LIB_HEADERS := lambda.hpp include/lc/core.hpp include/lc/intrinsics.hpp include/lc/eval.hpp include/lc/lisp.hpp include/lc/reader.hpp include/lc/std.hpp include/lc/runtime.hpp include/lc/pretty.hpp
 
 .PHONY: demo test trace clean
 
@@ -13,10 +14,10 @@ test: $(BIN_DIR)/tests
 trace: CXXFLAGS += -ftime-trace
 trace: clean demo test
 
-$(BIN_DIR)/demo: main.cpp lambda.hpp include/lc/core.hpp include/lc/intrinsics.hpp include/lc/eval.hpp include/lc/std.hpp include/lc/runtime.hpp | $(BIN_DIR)
+$(BIN_DIR)/demo: main.cpp $(LIB_HEADERS) | $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) main.cpp -o $(BIN_DIR)/demo
 
-$(BIN_DIR)/tests: tests.cpp lambda.hpp include/lc/core.hpp include/lc/intrinsics.hpp include/lc/eval.hpp include/lc/std.hpp include/lc/runtime.hpp | $(BIN_DIR)
+$(BIN_DIR)/tests: tests.cpp $(LIB_HEADERS) | $(BIN_DIR)
 	$(CXX) $(CXXFLAGS) tests.cpp -o $(BIN_DIR)/tests
 
 $(BIN_DIR):

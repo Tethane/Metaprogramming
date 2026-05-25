@@ -378,6 +378,11 @@ struct Pretty<TypeError<Message>> {
     using type = pretty_detail::StringCatMany_t<String<'#', '<', 't', 'y', 'p', 'e', '-', 'e', 'r', 'r', 'o', 'r', ' '>, typename pretty_detail::PrettyMessage<Message>::type, String<'>'> >;
 };
 
+template<typename Message>
+struct Pretty<ReaderError<Message>> {
+    using type = pretty_detail::StringCatMany_t<String<'#', '<', 'r', 'e', 'a', 'd', 'e', 'r', '-', 'e', 'r', 'r', 'o', 'r', ' '>, typename pretty_detail::PrettyMessage<Message>::type, String<'>'> >;
+};
+
 template<typename T>
 inline constexpr std::string_view pretty_string_view_v = to_string_view_v<Pretty_t<T>>;
 

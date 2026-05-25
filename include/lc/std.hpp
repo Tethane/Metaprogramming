@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lisp.hpp"
+#include "reader.hpp"
 
 namespace lc {
 
@@ -135,6 +135,34 @@ using LispStringResult = EvalLisp_t<LispStringProgram>;
 
 using LispBadProgram = CallExpr<Add, String<'o', 'o', 'p', 's'>, Int<1>>;
 using LispBadProgramType = TypeCheck_t<LispBadProgram>;
+
+using ReaderClosureProgram = ReadSource_t<"(let ((x 10) (make (lambda ((y Int)) (lambda ((z Int)) (+ (+ x y) z))))) ((make 5) 7))">;
+using ReaderClosureResult = ReadSourceEval_t<"(let ((x 10) (make (lambda ((y Int)) (lambda ((z Int)) (+ (+ x y) z))))) ((make 5) 7))">;
+using ReaderClosureType = ReadSourceTypeCheck_t<"(let ((x 10) (make (lambda ((y Int)) (lambda ((z Int)) (+ (+ x y) z))))) ((make 5) 7))">;
+
+using ReaderStringProgram = ReadSource_t<"(let ((msg \"lambda\")) (string-append msg \" runtime\"))">;
+using ReaderStringResult = ReadSourceEval_t<"(let ((msg \"lambda\")) (string-append msg \" runtime\"))">;
+
+using ReaderQuotedListProgram = ReadSource_t<"'(1 2 3)">;
+using ReaderQuotedListResult = ReadSourceEval_t<"'(1 2 3)">;
+
+using ReaderUntypedIdentityProgram = ReadSource_t<"((lambda (x) x) 42)">;
+using ReaderUntypedIdentityResult = ReadSourceEval_t<"((lambda (x) x) 42)">;
+using ReaderUntypedIdentityType = ReadSourceTypeCheck_t<"((lambda (x) x) 42)">;
+
+using ReaderCommentProgram = ReadSource_t<R"(
+    (begin
+      ; comments are ignored by the reader
+      ((lambda (msg) (string-append msg " reader")) "lambda"))
+)">;
+using ReaderCommentResult = ReadSourceEval_t<R"(
+    (begin
+      ; comments are ignored by the reader
+      ((lambda (msg) (string-append msg " reader")) "lambda"))
+)">;
+
+using ReaderEscapedStringResult = ReadSourceEval_t<"\"lambda\\nreader\"">;
+using ReaderBoolProgram = ReadSourceEval_t<"(if #t 1 2)">;
 
 namespace church {
 

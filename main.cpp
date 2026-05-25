@@ -57,4 +57,11 @@ int main() {
     std::cout << "lisp closure type: " << lc::pretty_string_view_v<lc::LispClosureResultType> << "\n";
     std::cout << "lisp string result: " << lc::to_string_view_v<lc::LispStringResult> << "\n";
     std::cout << "core lambda identity pretty: " << lc::pretty_string_view_v<lc::I> << "\n";
+    std::cout << "reader closure program: " << lc::pretty_string_view_v<lc::ReaderClosureProgram> << "\n";
+    std::cout << "reader closure result: " << lc::to_int_v<lc::ReaderClosureResult> << "\n";
+    std::cout << "reader quoted list: " << lc::pretty_string_view_v<lc::ReaderQuotedListResult> << "\n";
+    std::cout << "reader untyped identity result: " << lc::to_int_v<lc::ReaderUntypedIdentityResult> << "\n";
+    std::cout << "reader comment program result: " << lc::to_string_view_v<lc::ReaderCommentResult> << "\n";
+    std::cout << "reader escaped string pretty: " << lc::pretty_string_view_v<lc::ReaderEscapedStringResult> << "\n";
+    std::cout << "reader parse error pretty: " << lc::pretty_string_view_v<lc::ReadSource_t<"(+ 1 2">> << "\n";
 }

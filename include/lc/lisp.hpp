@@ -680,7 +680,8 @@ private:
     struct Matches<Params<ParamsP...>, TypePack<ArgsA...>>
         : std::bool_constant<
               sizeof...(ParamsP) == sizeof...(ArgsA) &&
-              (IsSame<typename ParamsP::type, ArgsA>::value && ...)
+              ((IsSame<typename ParamsP::type, AnyType>::value ||
+                IsSame<typename ParamsP::type, ArgsA>::value) && ...)
           > {};
 
 public:
