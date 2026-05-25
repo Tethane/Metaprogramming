@@ -12,6 +12,9 @@ struct to_int;
 template<int N>
 struct to_int<Nat<N>> : Nat<N> {};
 
+template<int N>
+struct to_int<Int<N>> : Int<N> {};
+
 template<typename Term>
 inline constexpr int to_int_v = to_int<Term>::value;
 
@@ -32,7 +35,23 @@ struct to_array<List<Nat<Ns>...>> {
     static constexpr std::array<int, sizeof...(Ns)> value = {Ns...};
 };
 
+template<int... Ns>
+struct to_array<List<Int<Ns>...>> {
+    static constexpr std::array<int, sizeof...(Ns)> value = {Ns...};
+};
+
 template<typename Term>
 inline constexpr auto to_array_v = to_array<Term>::value;
+
+template<typename Term>
+struct to_matrix;
+
+template<typename... Rows>
+struct to_matrix<List<Rows...>> {
+    static constexpr auto value = std::array{to_array<Rows>::value...};
+};
+
+template<typename Term>
+inline constexpr auto to_matrix_v = to_matrix<Term>::value;
 
 } // namespace lc

@@ -12,6 +12,7 @@ using PrimeListExpected =
 using Inc = Lambda<Apply_t<Succ, Var<0>>>;
 using IsEven = Lambda<Apply_t<IsZero, Apply_t<Mod, Var<0>, Two>>>;
 using AddFold = Lambda<Lambda<Apply_t<Add, Var<1>, Var<0>>>>;
+using ThreeSumExpected = List<List<NegOne, NegOne, Int<2>>, List<NegOne, Int<0>, Int<1>>>;
 
 static_assert(IsSame<Normalize_t<Apply_t<I, A>>, A>::value);
 static_assert(IsSame<Normalize_t<Apply_t<K, A, Bv>>, A>::value);
@@ -60,6 +61,9 @@ static_assert(IsSame<Normalize_t<Apply_t<Sum, List<One, Two, Three>>>, Six>::val
 static_assert(IsSame<Normalize_t<Apply_t<Product, List<Two, Three, Four>>>, Nat<24>>::value);
 static_assert(IsSame<Normalize_t<Apply_t<Any, List<False, True, False>>>, True>::value);
 static_assert(IsSame<Normalize_t<Apply_t<All, List<True, True, False>>>, False>::value);
+static_assert(IsSame<Normalize_t<Apply_t<Add, Int<4>, NegOne>>, Int<3>>::value);
+static_assert(IsSame<Normalize_t<Apply_t<Sub, Int<4>, NegOne>>, Int<5>>::value);
+static_assert(IsSame<Normalize_t<Apply_t<Gt, Int<4>, NegOne>>, True>::value);
 
 static_assert(IsSame<Normalize_t<Apply_t<Factorial, Three>, 4096>, Six>::value);
 static_assert(IsSame<Normalize_t<O, 8>, OutOfFuel<O>>::value);
@@ -68,9 +72,17 @@ static_assert(IsSame<NormalizeChecked_t<O, 16>, CycleDetected<O>>::value);
 static_assert(IsSame<PrimesUpTo50, PrimeListExpected>::value);
 static_assert(IsSame<PrimeCountUpTo50, Nat<15>>::value);
 static_assert(IsSame<PrimeSumUpTo50, Nat<328>>::value);
+static_assert(IsSame<TwoSumExample, List<Nat<0>, Nat<1>>>::value);
+static_assert(IsSame<MaxSubarrayExample, Int<6>>::value);
+static_assert(IsSame<ThreeSumExample, ThreeSumExpected>::value);
 static_assert(to_int_v<PrimeCountUpTo50> == 15);
 static_assert(to_int_v<PrimeSumUpTo50> == 328);
+static_assert(to_int_v<MaxSubarrayExample> == 6);
 static_assert(to_array_v<PrimesUpTo50>.size() == 15);
+static_assert(to_array_v<TwoSumExample>[0] == 0);
+static_assert(to_array_v<TwoSumExample>[1] == 1);
+static_assert(to_matrix_v<ThreeSumExample>[0][0] == -1);
+static_assert(to_matrix_v<ThreeSumExample>[1][2] == 1);
 
 int main() {
     return 0;

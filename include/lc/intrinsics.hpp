@@ -41,6 +41,9 @@ struct Product {};
 struct Any {};
 struct All {};
 struct Sieve {};
+struct TwoSum {};
+struct MaxSubarraySum {};
+struct ThreeSum {};
 
 namespace detail {
 
@@ -51,6 +54,18 @@ constexpr int pow_constexpr(int base, int exp) {
     }
     return result;
 }
+
+template<typename Number>
+struct ValueOf;
+
+template<int N>
+struct ValueOf<Nat<N>> : Nat<N> {};
+
+template<int N>
+struct ValueOf<Int<N>> : Int<N> {};
+
+template<typename T>
+inline constexpr int value_of_v = ValueOf<T>::value;
 
 template<typename T, typename ListT>
 struct ListPushFront;
@@ -254,6 +269,211 @@ struct AllList<List<Bool<B>, Rest...>> {
 template<typename ListT>
 using AllList_t = typename AllList<ListT>::type;
 
+template<typename T, typename ListT>
+struct ListContains;
+
+template<typename T>
+struct ListContains<T, List<>> : std::false_type {};
+
+template<typename T, typename Head, typename... Tail>
+struct ListContains<T, List<Head, Tail...>>
+    : std::bool_constant<IsSame<T, Head>::value || ListContains<T, List<Tail...>>::value> {};
+
+template<typename Left, typename Right>
+struct UniqueConcatLists;
+
+template<typename... LeftItems>
+struct UniqueConcatLists<List<LeftItems...>, List<>> {
+    using type = List<LeftItems...>;
+};
+
+template<typename... LeftItems, typename Item, typename... Rest>
+struct UniqueConcatLists<List<LeftItems...>, List<Item, Rest...>> {
+private:
+    using appended = IfType_t<
+        ListContains<Item, List<LeftItems...>>::value,
+        List<LeftItems...>,
+        List<LeftItems..., Item>
+    >;
+
+public:
+    using type = typename UniqueConcatLists<appended, List<Rest...>>::type;
+};
+
+template<typename Left, typename Right>
+using UniqueConcatLists_t = typename UniqueConcatLists<Left, Right>::type;
+
+template<int Needed, int Index, typename ListT>
+struct FindValueIndex;
+
+template<int Needed, int Index>
+struct FindValueIndex<Needed, Index, List<>> {
+    using type = List<>;
+};
+
+template<bool Match, int Needed, int Index, typename Item, typename... Rest>
+struct FindValueIndexStep;
+
+template<int Needed, int Index, typename Item, typename... Rest>
+struct FindValueIndexStep<true, Needed, Index, Item, Rest...> {
+    using type = List<Nat<Index>>;
+};
+
+template<int Needed, int Index, typename Item, typename... Rest>
+struct FindValueIndexStep<false, Needed, Index, Item, Rest...> {
+    using type = typename FindValueIndex<Needed, Index + 1, List<Rest...>>::type;
+};
+
+template<int Needed, int Index, typename Item, typename... Rest>
+struct FindValueIndex<Needed, Index, List<Item, Rest...>> {
+    using type = typename FindValueIndexStep<
+        (value_of_v<Item> == Needed),
+        Needed,
+        Index,
+        Item,
+        Rest...
+    >::type;
+};
+
+template<int Target, int Index, typename ListT>
+struct TwoSumList;
+
+template<int Target, int Index>
+struct TwoSumList<Target, Index, List<>> {
+    using type = List<>;
+};
+
+template<typename InnerResult, int CurrentIndex, int Target, int NextIndex, typename RestList>
+struct TwoSumListAfterInner;
+
+template<int CurrentIndex, int Target, int NextIndex, typename RestList>
+struct TwoSumListAfterInner<List<>, CurrentIndex, Target, NextIndex, RestList> {
+    using type = typename TwoSumList<Target, NextIndex, RestList>::type;
+};
+
+template<typename MatchIndex, int CurrentIndex, int Target, int NextIndex, typename RestList>
+struct TwoSumListAfterInner {
+    using type = ListPushFront_t<Nat<CurrentIndex>, MatchIndex>;
+};
+
+template<int Target, int Index, typename Item, typename... Rest>
+struct TwoSumList<Target, Index, List<Item, Rest...>> {
+private:
+    using inner = typename FindValueIndex<Target - value_of_v<Item>, Index + 1, List<Rest...>>::type;
+
+public:
+    using type = typename TwoSumListAfterInner<inner, Index, Target, Index + 1, List<Rest...>>::type;
+};
+
+template<int Target, typename ListT>
+using TwoSumList_t = typename TwoSumList<Target, 0, ListT>::type;
+
+template<int CurrentBest, int Running, typename ListT>
+struct MaxSubarrayScan;
+
+template<int CurrentBest, int Running>
+struct MaxSubarrayScan<CurrentBest, Running, List<>> {
+    using type = Int<CurrentBest>;
+};
+
+template<int CurrentBest, int Running, typename Item, typename... Rest>
+struct MaxSubarrayScan<CurrentBest, Running, List<Item, Rest...>> {
+private:
+    static constexpr int item_value = value_of_v<Item>;
+    static constexpr int next_running = (Running + item_value > item_value) ? (Running + item_value) : item_value;
+    static constexpr int next_best = (CurrentBest > next_running) ? CurrentBest : next_running;
+
+public:
+    using type = typename MaxSubarrayScan<next_best, next_running, List<Rest...>>::type;
+};
+
+template<typename ListT>
+struct MaxSubarrayList;
+
+template<>
+struct MaxSubarrayList<List<>> {
+    using type = Int<0>;
+};
+
+template<typename Item, typename... Rest>
+struct MaxSubarrayList<List<Item, Rest...>> {
+    using type = typename MaxSubarrayScan<value_of_v<Item>, value_of_v<Item>, List<Rest...>>::type;
+};
+
+template<typename ListT>
+using MaxSubarrayList_t = typename MaxSubarrayList<ListT>::type;
+
+template<int First, int Second, typename ListT>
+struct ThirdSumMatches;
+
+template<int First, int Second>
+struct ThirdSumMatches<First, Second, List<>> {
+    using type = List<>;
+};
+
+template<int First, int Second, typename Item, typename... Rest>
+struct ThirdSumMatches<First, Second, List<Item, Rest...>> {
+private:
+    using tail = typename ThirdSumMatches<First, Second, List<Rest...>>::type;
+    using triplet = List<Int<First>, Int<Second>, Int<value_of_v<Item>>>;
+
+public:
+    using type = IfType_t<
+        (First + Second + value_of_v<Item> == 0),
+        UniqueConcatLists_t<List<triplet>, tail>,
+        tail
+    >;
+};
+
+template<int First, typename ListT>
+struct ThreeSumSecondLoop;
+
+template<int First>
+struct ThreeSumSecondLoop<First, List<>> {
+    using type = List<>;
+};
+
+template<int First, typename Item, typename... Rest>
+struct ThreeSumSecondLoop<First, List<Item, Rest...>> {
+private:
+    using with_second = typename ThirdSumMatches<First, value_of_v<Item>, List<Rest...>>::type;
+    using without_second = typename ThreeSumSecondLoop<First, List<Rest...>>::type;
+
+public:
+    using type = UniqueConcatLists_t<with_second, without_second>;
+};
+
+template<typename ListT>
+struct ThreeSumList;
+
+template<>
+struct ThreeSumList<List<>> {
+    using type = List<>;
+};
+
+template<typename Item>
+struct ThreeSumList<List<Item>> {
+    using type = List<>;
+};
+
+template<typename First, typename Second>
+struct ThreeSumList<List<First, Second>> {
+    using type = List<>;
+};
+
+template<typename Item, typename... Rest>
+struct ThreeSumList<List<Item, Rest...>> {
+private:
+    using with_first = typename ThreeSumSecondLoop<value_of_v<Item>, List<Rest...>>::type;
+    using without_first = typename ThreeSumList<List<Rest...>>::type;
+
+public:
+    using type = UniqueConcatLists_t<with_first, without_first>;
+};
+
+template<typename ListT>
+using ThreeSumList_t = typename ThreeSumList<ListT>::type;
+
 template<int Prime, typename ListT>
 struct RemoveMultiples;
 
@@ -330,8 +550,18 @@ struct IntrinsicStep<Call<Add, Nat<Left>, Nat<Right>>> {
 };
 
 template<int Left, int Right>
+struct IntrinsicStep<Call<Add, Int<Left>, Int<Right>>> {
+    using type = ReductionResult<Int<Left + Right>, true>;
+};
+
+template<int Left, int Right>
 struct IntrinsicStep<Call<Sub, Nat<Left>, Nat<Right>>> {
     using type = ReductionResult<Nat<(Left >= Right ? Left - Right : 0)>, true>;
+};
+
+template<int Left, int Right>
+struct IntrinsicStep<Call<Sub, Int<Left>, Int<Right>>> {
+    using type = ReductionResult<Int<Left - Right>, true>;
 };
 
 template<int Left, int Right>
@@ -340,8 +570,18 @@ struct IntrinsicStep<Call<Mul, Nat<Left>, Nat<Right>>> {
 };
 
 template<int Left, int Right>
+struct IntrinsicStep<Call<Mul, Int<Left>, Int<Right>>> {
+    using type = ReductionResult<Int<Left * Right>, true>;
+};
+
+template<int Left, int Right>
 struct IntrinsicStep<Call<Div, Nat<Left>, Nat<Right>>> {
     using type = ReductionResult<Nat<(Right == 0 ? 0 : Left / Right)>, true>;
+};
+
+template<int Left, int Right>
+struct IntrinsicStep<Call<Div, Int<Left>, Int<Right>>> {
+    using type = ReductionResult<Int<(Right == 0 ? 0 : Left / Right)>, true>;
 };
 
 template<int Left, int Right>
@@ -349,13 +589,28 @@ struct IntrinsicStep<Call<Mod, Nat<Left>, Nat<Right>>> {
     using type = ReductionResult<Nat<(Right == 0 ? 0 : Left % Right)>, true>;
 };
 
+template<int Left, int Right>
+struct IntrinsicStep<Call<Mod, Int<Left>, Int<Right>>> {
+    using type = ReductionResult<Int<(Right == 0 ? 0 : Left % Right)>, true>;
+};
+
 template<int Base, int Exp>
 struct IntrinsicStep<Call<Pow, Nat<Base>, Nat<Exp>>> {
     using type = ReductionResult<Nat<pow_constexpr(Base, Exp)>, true>;
 };
 
+template<int Base, int Exp>
+struct IntrinsicStep<Call<Pow, Int<Base>, Nat<Exp>>> {
+    using type = ReductionResult<Int<pow_constexpr(Base, Exp)>, true>;
+};
+
 template<int Left, int Right>
 struct IntrinsicStep<Call<Eq, Nat<Left>, Nat<Right>>> {
+    using type = ReductionResult<Bool<(Left == Right)>, true>;
+};
+
+template<int Left, int Right>
+struct IntrinsicStep<Call<Eq, Int<Left>, Int<Right>>> {
     using type = ReductionResult<Bool<(Left == Right)>, true>;
 };
 
@@ -365,7 +620,17 @@ struct IntrinsicStep<Call<Lt, Nat<Left>, Nat<Right>>> {
 };
 
 template<int Left, int Right>
+struct IntrinsicStep<Call<Lt, Int<Left>, Int<Right>>> {
+    using type = ReductionResult<Bool<(Left < Right)>, true>;
+};
+
+template<int Left, int Right>
 struct IntrinsicStep<Call<Lte, Nat<Left>, Nat<Right>>> {
+    using type = ReductionResult<Bool<(Left <= Right)>, true>;
+};
+
+template<int Left, int Right>
+struct IntrinsicStep<Call<Lte, Int<Left>, Int<Right>>> {
     using type = ReductionResult<Bool<(Left <= Right)>, true>;
 };
 
@@ -375,12 +640,27 @@ struct IntrinsicStep<Call<Gt, Nat<Left>, Nat<Right>>> {
 };
 
 template<int Left, int Right>
+struct IntrinsicStep<Call<Gt, Int<Left>, Int<Right>>> {
+    using type = ReductionResult<Bool<(Left > Right)>, true>;
+};
+
+template<int Left, int Right>
 struct IntrinsicStep<Call<Gte, Nat<Left>, Nat<Right>>> {
+    using type = ReductionResult<Bool<(Left >= Right)>, true>;
+};
+
+template<int Left, int Right>
+struct IntrinsicStep<Call<Gte, Int<Left>, Int<Right>>> {
     using type = ReductionResult<Bool<(Left >= Right)>, true>;
 };
 
 template<int N>
 struct IntrinsicStep<Call<IsZero, Nat<N>>> {
+    using type = ReductionResult<Bool<(N == 0)>, true>;
+};
+
+template<int N>
+struct IntrinsicStep<Call<IsZero, Int<N>>> {
     using type = ReductionResult<Bool<(N == 0)>, true>;
 };
 
@@ -477,6 +757,21 @@ struct IntrinsicStep<Call<All, List<Items...>>> {
 template<typename... Items>
 struct IntrinsicStep<Call<Sieve, List<Items...>>> {
     using type = ReductionResult<SieveList_t<List<Items...>>, true>;
+};
+
+template<typename... Items, typename Target>
+struct IntrinsicStep<Call<TwoSum, List<Items...>, Target>> {
+    using type = ReductionResult<TwoSumList_t<value_of_v<Target>, List<Items...>>, true>;
+};
+
+template<typename... Items>
+struct IntrinsicStep<Call<MaxSubarraySum, List<Items...>>> {
+    using type = ReductionResult<MaxSubarrayList_t<List<Items...>>, true>;
+};
+
+template<typename... Items>
+struct IntrinsicStep<Call<ThreeSum, List<Items...>>> {
+    using type = ReductionResult<ThreeSumList_t<List<Items...>>, true>;
 };
 
 } // namespace detail

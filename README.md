@@ -8,7 +8,7 @@ At its core, it has:
 - capture-avoiding shift and substitution
 - a normal-order reducer with bounded fuel
 - an opt-in checked normalizer for exact cycle detection
-- a hybrid standard library with intrinsic naturals, booleans, and lists for practical compile-time performance
+- a hybrid standard library with intrinsic naturals, signed integers, booleans, and lists for practical compile-time performance
 
 The result is a small compile-time language runtime built with templates. It still reduces programs by type substitution and application, but it avoids the worst Church-encoding blowups for arithmetic and collection-heavy code.
 
@@ -17,7 +17,7 @@ The result is a small compile-time language runtime built with templates. It sti
 Pure lambda-calculus encodings are elegant, but they get expensive very quickly in C++ template metaprogramming. This project takes a pragmatic approach:
 
 - lambda terms, substitution, and beta reduction remain the computational foundation
-- performance-critical values use compact intrinsic forms like `Nat<5>`, `Bool<true>`, and `List<...>`
+- performance-critical values use compact intrinsic forms like `Nat<5>`, `Int<-3>`, `Bool<true>`, and `List<...>`
 - primitive operations such as `Add`, `Map`, `Filter`, and `Range` reduce directly when their arguments are intrinsic values
 
 That gives you something that still feels like a tiny lambda-calculus computer, but can also run more interesting compile-time programs.
@@ -32,8 +32,9 @@ That gives you something that still feels like a tiny lambda-calculus computer, 
 - Standard library for:
   - combinators: `I`, `K`, `KI`, `S`, `B`, `C`, `W`, `Y`
   - booleans: `True`, `False`, `If`, `Not`, `And`, `Or`
-  - naturals: `Zero` through `Twelve`, `Succ`, `Pred`, `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Pow`, `Eq`, `Lt`, `Lte`, `Gt`, `Gte`, `IsZero`
+  - numbers: `Nat<N>`, `Int<N>`, `Zero` through `Twelve`, `NegOne` through `NegFive`, `Succ`, `Pred`, `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Pow`, `Eq`, `Lt`, `Lte`, `Gt`, `Gte`, `IsZero`
   - lists: `Nil`, `Cons`, `Head`, `Tail`, `IsEmpty`, `Concat`, `Reverse`, `Length`, `Range`, `Map`, `Filter`, `Foldl`, `Foldr`, `Sum`, `Product`, `Any`, `All`
+- Example algorithms: `Sieve`, `TwoSum`, `MaxSubarraySum`, `ThreeSum`
 - Legacy pure encodings preserved under `lc::church`
 - Runtime bridge helpers for turning compile-time results into ordinary values
 
@@ -78,6 +79,9 @@ The demo computes a sieve of Eratosthenes at compile time over the range `2..50`
 primes up to 50: [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47]
 count: 15
 sum: 328
+two-sum indices for [2, 7, 11, 15], target 9: [0, 1]
+maximum subarray sum for [-2, 1, -3, 4, -1, 2, 1, -5, 4]: 6
+three-sum triplets for [-4, -1, -1, 0, 1, 2]: [[-1, -1, 2], [-1, 0, 1]]
 ```
 
 The relevant aliases live in [include/lc/std.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/std.hpp):
@@ -148,6 +152,29 @@ static_assert(IsSame<Compile_t<lam<x, var<x>>>, I>::value);
 static_assert(IsSame<Run_t<app<lam<x, var<x>>, free<a>>>, A>::value);
 ```
 
+### 5. Classic interview problems
+
+```cpp
+#include "lambda.hpp"
+
+using namespace lc;
+
+static_assert(IsSame<
+    Normalize_t<Apply_t<TwoSum, List<Two, Seven, Eleven, Nat<15>>, Nine>>,
+    List<Nat<0>, Nat<1>>
+>::value);
+
+static_assert(IsSame<
+    Normalize_t<Apply_t<MaxSubarraySum, List<NegTwo, Int<1>, NegThree, Int<4>, NegOne, Int<2>, Int<1>, NegFive, Int<4>>>>,
+    Int<6>
+>::value);
+
+static_assert(IsSame<
+    Normalize_t<Apply_t<ThreeSum, List<NegFour, NegOne, NegOne, Int<0>, Int<1>, Int<2>>>>,
+    List<List<NegOne, NegOne, Int<2>>, List<NegOne, Int<0>, Int<1>>>
+>::value);
+```
+
 ## Core Mental Model
 
 There are three layers to keep in mind:
@@ -169,6 +196,7 @@ The reducer canonicalizes application into `Call<...>`, then performs normal-ord
 These are compact data forms that make the system practical:
 
 - `Nat<N>`
+- `Int<N>`
 - `Bool<B>`
 - `List<Ts...>`
 
@@ -221,8 +249,10 @@ The library includes a small bridge for moving useful compile-time results into 
 
 ```cpp
 to_int_v<Nat<42>>
+to_int_v<Int<-7>>
 to_bool_v<Bool<true>>
 to_array_v<List<Nat<1>, Nat<2>, Nat<3>>>
+to_matrix_v<List<List<Int<-1>, Int<0>, Int<1>>>>
 ```
 
 That bridge is what powers the demo output in [main.cpp](/home/ethan/dev/fun/metaprogramming/main.cpp).

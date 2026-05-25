@@ -73,6 +73,11 @@ struct Nat {
     static constexpr int value = N;
 };
 
+template<int N>
+struct Int {
+    static constexpr int value = N;
+};
+
 template<bool B>
 struct Bool {
     static constexpr bool value = B;

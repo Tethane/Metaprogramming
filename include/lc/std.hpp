@@ -21,6 +21,12 @@ using Ten = Nat<10>;
 using Eleven = Nat<11>;
 using Twelve = Nat<12>;
 
+using NegOne = Int<-1>;
+using NegTwo = Int<-2>;
+using NegThree = Int<-3>;
+using NegFour = Int<-4>;
+using NegFive = Int<-5>;
+
 using Nil = List<>;
 
 using I = Lambda<Var<0>>;
@@ -59,6 +65,16 @@ using PrimesUpTo = Normalize_t<Apply_t<Sieve, Apply_t<Range, Two, Nat<Limit>>>, 
 using PrimesUpTo50 = PrimesUpTo<50>;
 using PrimeCountUpTo50 = Normalize_t<Apply_t<Length, PrimesUpTo50>>;
 using PrimeSumUpTo50 = Normalize_t<Apply_t<Sum, PrimesUpTo50>>;
+
+using TwoSumInput = List<Two, Seven, Eleven, Nat<15>>;
+using TwoSumTarget = Nine;
+using TwoSumExample = Normalize_t<Apply_t<TwoSum, TwoSumInput, TwoSumTarget>>;
+
+using MaxSubarrayInput = List<NegTwo, Int<1>, NegThree, Int<4>, NegOne, Int<2>, Int<1>, NegFive, Int<4>>;
+using MaxSubarrayExample = Normalize_t<Apply_t<MaxSubarraySum, MaxSubarrayInput>>;
+
+using ThreeSumInput = List<NegFour, NegOne, NegOne, Int<0>, Int<1>, Int<2>>;
+using ThreeSumExample = Normalize_t<Apply_t<ThreeSum, ThreeSumInput>>;
 
 namespace church {
 
