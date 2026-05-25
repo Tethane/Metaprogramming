@@ -40,6 +40,63 @@ struct to_string_view<String<Chars...>> {
 template<typename Term>
 inline constexpr std::string_view to_string_view_v = to_string_view<Term>::value;
 
+template<auto Storage>
+struct bigint_string_view_storage {
+    inline static constexpr auto normalized = detail::normalize_bigint_storage(Storage);
+    inline static constexpr std::size_t length = normalized.size + (normalized.negative ? 1 : 0);
+    inline static constexpr auto storage = [] {
+        std::array<char, bigint_capacity + 2> out{};
+        std::size_t cursor = 0;
+        if (normalized.negative) {
+            out[cursor++] = '-';
+        }
+        for (std::size_t i = 0; i < normalized.size; ++i) {
+            out[cursor++] = normalized.digits[i];
+        }
+        out[cursor] = '\0';
+        return out;
+    }();
+    inline static constexpr std::string_view value{storage.data(), length};
+};
+
+template<typename Term>
+struct to_bigint_string_view;
+
+template<auto Storage>
+struct to_bigint_string_view<BigInt<Storage>> : bigint_string_view_storage<Storage> {};
+
+template<typename Term>
+inline constexpr std::string_view to_bigint_string_view_v = to_bigint_string_view<Term>::value;
+
+template<typename Term>
+struct to_rational_string_view;
+
+template<typename Num, typename Den>
+struct to_rational_string_view<Rational<Num, Den>> {
+private:
+    inline static constexpr auto numerator = to_bigint_string_view<Num>::value;
+    inline static constexpr auto denominator = to_bigint_string_view<Den>::value;
+    inline static constexpr auto storage = [] {
+        std::array<char, (bigint_capacity * 2) + 4> out{};
+        std::size_t cursor = 0;
+        for (char ch : numerator) {
+            out[cursor++] = ch;
+        }
+        out[cursor++] = '/';
+        for (char ch : denominator) {
+            out[cursor++] = ch;
+        }
+        out[cursor] = '\0';
+        return out;
+    }();
+
+public:
+    inline static constexpr std::string_view value{storage.data(), numerator.size() + 1 + denominator.size()};
+};
+
+template<typename Term>
+inline constexpr std::string_view to_rational_string_view_v = to_rational_string_view<Term>::value;
+
 template<typename Term>
 struct to_array;
 

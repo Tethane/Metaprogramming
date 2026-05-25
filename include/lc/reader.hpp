@@ -37,6 +37,7 @@ using msg_reader_invalid_define = String<'i', 'n', 'v', 'a', 'l', 'i', 'd', '-',
 using msg_reader_invalid_cond = String<'i', 'n', 'v', 'a', 'l', 'i', 'd', '-', 'c', 'o', 'n', 'd'>;
 using msg_reader_missing_else = String<'m', 'i', 's', 's', 'i', 'n', 'g', '-', 'e', 'l', 's', 'e'>;
 using msg_reader_unknown_type = String<'u', 'n', 'k', 'n', 'o', 'w', 'n', '-', 't', 'y', 'p', 'e'>;
+using msg_reader_invalid_number = String<'i', 'n', 'v', 'a', 'l', 'i', 'd', '-', 'n', 'u', 'm', 'b', 'e', 'r'>;
 
 template<typename Expr, typename Rest>
 struct Parsed {
@@ -47,8 +48,8 @@ struct Parsed {
 template<typename Name>
 struct SSymbol {};
 
-template<int N>
-struct SInt {};
+template<typename Token>
+struct SNumberLit {};
 
 template<char... Chars>
 struct SStringLit {};
@@ -207,7 +208,7 @@ struct ParseStringBody;
 template<typename Acc, typename Str>
 struct ParseStringEscape;
 
-template<int Sign, int Acc, typename Str>
+template<typename Acc, typename Str>
 struct ParseNumberBody;
 
 template<typename Acc, typename Str>
@@ -280,7 +281,7 @@ struct ParseDashDispatch;
 
 template<char Next, char... Rest>
 struct ParseDashDispatch<true, Next, String<Rest...>> {
-    using type = typename ParseNumberBody<-1, Next - '0', String<Rest...>>::type;
+    using type = typename ParseNumberBody<String<'-', Next>, String<Rest...>>::type;
 };
 
 template<char Next, char... Rest>
@@ -298,7 +299,7 @@ struct ParseInitialDispatch;
 
 template<char C, char... Rest>
 struct ParseInitialDispatch<true, C, String<Rest...>> {
-    using type = typename ParseNumberBody<1, C - '0', String<Rest...>>::type;
+    using type = typename ParseNumberBody<String<C>, String<Rest...>>::type;
 };
 
 template<char C, char... Rest>
@@ -366,27 +367,27 @@ struct ParseStringEscape<Acc, String<C, Rest...>> {
     using type = typename ParseStringBody<StringPushBack_t<Acc, C>, String<Rest...>>::type;
 };
 
-template<int Sign, int Acc>
-struct ParseNumberBody<Sign, Acc, String<>> {
-    using type = Parsed<SInt<Sign * Acc>, String<>>;
+template<typename Acc>
+struct ParseNumberBody<Acc, String<>> {
+    using type = Parsed<SNumberLit<Acc>, String<>>;
 };
 
-template<bool Digit, int Sign, int Acc, typename Str>
+template<bool Delimited, typename Acc, typename Str>
 struct ParseNumberDispatch;
 
-template<int Sign, int Acc, char C, char... Rest>
-struct ParseNumberDispatch<true, Sign, Acc, String<C, Rest...>> {
-    using type = typename ParseNumberBody<Sign, Acc * 10 + (C - '0'), String<Rest...>>::type;
+template<typename Acc, char C, char... Rest>
+struct ParseNumberDispatch<true, Acc, String<C, Rest...>> {
+    using type = Parsed<SNumberLit<Acc>, String<C, Rest...>>;
 };
 
-template<int Sign, int Acc, char C, char... Rest>
-struct ParseNumberDispatch<false, Sign, Acc, String<C, Rest...>> {
-    using type = Parsed<SInt<Sign * Acc>, String<C, Rest...>>;
+template<typename Acc, char C, char... Rest>
+struct ParseNumberDispatch<false, Acc, String<C, Rest...>> {
+    using type = typename ParseNumberBody<StringPushBack_t<Acc, C>, String<Rest...>>::type;
 };
 
-template<int Sign, int Acc, char C, char... Rest>
-struct ParseNumberBody<Sign, Acc, String<C, Rest...>> {
-    using type = typename ParseNumberDispatch<IsDigit<C>::value, Sign, Acc, String<C, Rest...>>::type;
+template<typename Acc, char C, char... Rest>
+struct ParseNumberBody<Acc, String<C, Rest...>> {
+    using type = typename ParseNumberDispatch<IsDelimiter<C>::value, Acc, String<C, Rest...>>::type;
 };
 
 template<typename Acc>
@@ -951,6 +952,7 @@ template<> struct PrimitiveOf<String<'*'> > { using type = Mul; };
 template<> struct PrimitiveOf<String<'/'> > { using type = Div; };
 template<> struct PrimitiveOf<String<'m', 'o', 'd'> > { using type = Mod; };
 template<> struct PrimitiveOf<String<'p', 'o', 'w'> > { using type = Pow; };
+template<> struct PrimitiveOf<String<'a', 'b', 's'> > { using type = Abs; };
 template<> struct PrimitiveOf<String<'='> > { using type = Eq; };
 template<> struct PrimitiveOf<String<'<'> > { using type = Lt; };
 template<> struct PrimitiveOf<String<'<', '='> > { using type = Lte; };
@@ -986,6 +988,168 @@ template<> struct PrimitiveOf<String<'m', 'a', 'p', '-', 's', 'i', 'z', 'e'> > {
 template<typename Name>
 using PrimitiveOf_t = typename PrimitiveOf<Name>::type;
 
+template<typename Token>
+struct LowerNumberLiteral {
+    using type = ReaderError<msg_reader_invalid_number>;
+};
+
+template<bool Fits, typename Token>
+struct LowerIntegerLiteralImpl;
+
+template<char... Chars>
+struct LowerNumberLiteral<String<Chars...>> {
+private:
+    inline static constexpr char token[sizeof...(Chars)] = {Chars...};
+    inline static constexpr std::size_t size = sizeof...(Chars);
+
+    static consteval std::size_t find_slash() {
+        std::size_t found = size;
+        for (std::size_t i = 0; i < size; ++i) {
+            if (token[i] == '/') {
+                if (found != size) {
+                    return size + 1;
+                }
+                found = i;
+            }
+        }
+        return found;
+    }
+
+    static consteval bool all_digits(std::size_t begin, std::size_t end) {
+        if (begin >= end) {
+            return false;
+        }
+        for (std::size_t i = begin; i < end; ++i) {
+            if (token[i] < '0' || token[i] > '9') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static consteval bool valid_integer(std::size_t begin, std::size_t end, bool allow_sign) {
+        if (begin >= end) {
+            return false;
+        }
+        std::size_t cursor = begin;
+        if (allow_sign && (token[cursor] == '-' || token[cursor] == '+')) {
+            ++cursor;
+        }
+        return all_digits(cursor, end);
+    }
+
+    static consteval bool fits_int() {
+        if (!valid_integer(0, size, true)) {
+            return false;
+        }
+
+        long long value = 0;
+        bool negative = false;
+        std::size_t cursor = 0;
+        if (token[cursor] == '-' || token[cursor] == '+') {
+            negative = token[cursor] == '-';
+            ++cursor;
+        }
+        for (; cursor < size; ++cursor) {
+            value = value * 10 + (token[cursor] - '0');
+            if (!negative && value > 2147483647LL) {
+                return false;
+            }
+            if (negative && value > 2147483648LL) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static consteval int parse_int() {
+        long long value = 0;
+        bool negative = false;
+        std::size_t cursor = 0;
+        if (token[cursor] == '-' || token[cursor] == '+') {
+            negative = token[cursor] == '-';
+            ++cursor;
+        }
+        for (; cursor < size; ++cursor) {
+            value = value * 10 + (token[cursor] - '0');
+        }
+        return static_cast<int>(negative ? -value : value);
+    }
+
+    static consteval bigint_storage parse_bigint_slice(std::size_t begin, std::size_t end, bool allow_sign) {
+        char buffer[bigint_capacity] = {};
+        std::size_t written = 0;
+        if (allow_sign && begin < end && (token[begin] == '-' || token[begin] == '+')) {
+            buffer[written++] = token[begin++];
+        }
+        for (; begin < end; ++begin) {
+            buffer[written++] = token[begin];
+        }
+        return detail::make_bigint_storage_from_chars(buffer, written);
+    }
+
+    inline static constexpr std::size_t slash = find_slash();
+    inline static constexpr bool is_integer_token = slash == size;
+    inline static constexpr bool integer_ok = is_integer_token && valid_integer(0, size, true);
+    inline static constexpr bool rational_ok =
+        slash < size &&
+        slash + 1 < size &&
+        valid_integer(0, slash, true) &&
+        valid_integer(slash + 1, size, false);
+    inline static constexpr auto numerator_storage =
+        rational_ok ? parse_bigint_slice(0, slash, true) : detail::make_bigint_storage_from_int(0);
+    inline static constexpr auto denominator_storage =
+        rational_ok ? parse_bigint_slice(slash + 1, size, false) : detail::make_bigint_storage_from_int(1);
+    using integer_type = typename LowerIntegerLiteralImpl<fits_int(), String<Chars...>>::type;
+    using rational_type =
+        detail::NormalizeRational_t<BigInt<numerator_storage>, BigInt<denominator_storage>>;
+
+public:
+    using type = IfType_t<
+        integer_ok,
+        integer_type,
+        IfType_t<
+            rational_ok && !detail::bigint_is_zero(denominator_storage),
+            rational_type,
+            ReaderError<msg_reader_invalid_number>
+        >
+    >;
+};
+
+template<char... Chars>
+struct LowerIntegerLiteralImpl<true, String<Chars...>> {
+private:
+    inline static constexpr char token[sizeof...(Chars)] = {Chars...};
+    inline static constexpr std::size_t size = sizeof...(Chars);
+
+    static consteval int parse_int() {
+        long long value = 0;
+        bool negative = false;
+        std::size_t cursor = 0;
+        if (token[cursor] == '-' || token[cursor] == '+') {
+            negative = token[cursor] == '-';
+            ++cursor;
+        }
+        for (; cursor < size; ++cursor) {
+            value = value * 10 + (token[cursor] - '0');
+        }
+        return static_cast<int>(negative ? -value : value);
+    }
+
+public:
+    using type = Int<parse_int()>;
+};
+
+template<char... Chars>
+struct LowerIntegerLiteralImpl<false, String<Chars...>> {
+private:
+    inline static constexpr char token[sizeof...(Chars)] = {Chars...};
+    inline static constexpr std::size_t size = sizeof...(Chars);
+
+public:
+    using type = BigInt<detail::make_bigint_storage_from_chars(token, size)>;
+};
+
 template<typename SExpr>
 struct QuoteValue {
     using type = ReaderError<msg_reader_invalid_quote>;
@@ -996,9 +1160,9 @@ struct QuoteValue<SSymbol<Name>> {
     using type = Symbol<Name>;
 };
 
-template<int N>
-struct QuoteValue<SInt<N>> {
-    using type = Int<N>;
+template<typename Token>
+struct QuoteValue<SNumberLit<Token>> {
+    using type = typename LowerNumberLiteral<Token>::type;
 };
 
 template<bool B>
@@ -1039,6 +1203,16 @@ struct LowerType<SSymbol<String<'N', 'a', 't'>>> {
 template<>
 struct LowerType<SSymbol<String<'I', 'n', 't'>>> {
     using type = IntType;
+};
+
+template<>
+struct LowerType<SSymbol<String<'B', 'i', 'g', 'I', 'n', 't'>>> {
+    using type = BigIntType;
+};
+
+template<>
+struct LowerType<SSymbol<String<'R', 'a', 't', 'i', 'o', 'n', 'a', 'l'>>> {
+    using type = RationalType;
 };
 
 template<>
@@ -1319,9 +1493,9 @@ public:
     >;
 };
 
-template<int N>
-struct LowerExpr<SInt<N>> {
-    using type = Int<N>;
+template<typename Token>
+struct LowerExpr<SNumberLit<Token>> {
+    using type = typename LowerNumberLiteral<Token>::type;
 };
 
 template<bool B>
@@ -1585,12 +1759,17 @@ template<typename Program>
 struct ReadEval {
 private:
     using parsed = typename ReadProgram<Program>::type;
+    using optimized = IfType_t<
+        IsReaderError<parsed>::value,
+        parsed,
+        OptimizeLisp_t<parsed>
+    >;
 
 public:
     using type = IfType_t<
         IsReaderError<parsed>::value,
         parsed,
-        EvalLisp_t<parsed>
+        EvalLisp_t<optimized>
     >;
 };
 
@@ -1598,10 +1777,15 @@ template<typename Program>
 struct ReadTypeCheck {
 private:
     using parsed = typename ReadProgram<Program>::type;
+    using optimized = IfType_t<
+        IsReaderError<parsed>::value,
+        parsed,
+        OptimizeLisp_t<parsed>
+    >;
     using checked = IfType_t<
         IsReaderError<parsed>::value,
         parsed,
-        TypeCheck_t<parsed>
+        TypeCheck_t<optimized>
     >;
 
 public:
@@ -1626,19 +1810,6 @@ using ReadTypeCheck_t = typename reader_detail::ReadTypeCheck<Program>::type;
 template<typename Program>
 using ExpandProgram_t = typename reader_detail::ExpandSourceProgram<Program>::type;
 
-template<std::size_t N>
-struct fixed_string {
-    char value[N];
-
-    constexpr fixed_string(const char (&input)[N]) : value{} {
-        for (std::size_t i = 0; i < N; ++i) {
-            value[i] = input[i];
-        }
-    }
-
-    static constexpr std::size_t size = N - 1;
-};
-
 template<fixed_string Source, typename Indices>
 struct literal_string_impl;
 
@@ -1661,5 +1832,17 @@ using ReadSourceTypeCheck_t = ReadTypeCheck_t<literal_string_t<Source>>;
 
 template<fixed_string Source>
 using ExpandSource_t = ExpandProgram_t<literal_string_t<Source>>;
+
+template<fixed_string Source>
+using ReadScript_t = ReadSource_t<Source>;
+
+template<fixed_string Source>
+using EvalScript_t = ReadSourceEval_t<Source>;
+
+template<fixed_string Source>
+using TypeCheckScript_t = ReadSourceTypeCheck_t<Source>;
+
+template<fixed_string Source>
+using ExpandScript_t = ExpandSource_t<Source>;
 
 } // namespace lc

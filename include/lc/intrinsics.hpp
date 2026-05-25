@@ -19,6 +19,7 @@ struct Mul {};
 struct Div {};
 struct Mod {};
 struct Pow {};
+struct Abs {};
 struct Eq {};
 struct Lt {};
 struct Lte {};
@@ -86,6 +87,480 @@ struct ValueOf<Int<N>> : Int<N> {};
 
 template<typename T>
 inline constexpr int value_of_v = ValueOf<T>::value;
+
+constexpr bool bigint_is_zero(const bigint_storage& value) {
+    return value.size == 1 && value.digits[0] == '0';
+}
+
+constexpr bigint_storage normalize_bigint_storage(bigint_storage value) {
+    std::size_t first = 0;
+    while (first + 1 < value.size && value.digits[first] == '0') {
+        ++first;
+    }
+
+    if (first != 0) {
+        for (std::size_t i = 0; i + first < value.size; ++i) {
+            value.digits[i] = value.digits[i + first];
+        }
+        value.size -= first;
+    }
+
+    if (bigint_is_zero(value)) {
+        value.negative = false;
+    }
+    for (std::size_t i = value.size; i < bigint_capacity; ++i) {
+        value.digits[i] = '\0';
+    }
+    return value;
+}
+
+consteval bigint_storage make_bigint_storage_from_int(long long raw) {
+    bigint_storage value{};
+    unsigned long long magnitude = static_cast<unsigned long long>(raw < 0 ? -raw : raw);
+    value.negative = raw < 0;
+    value.size = 0;
+
+    if (magnitude == 0) {
+        value.size = 1;
+        value.digits[0] = '0';
+        value.negative = false;
+        return value;
+    }
+
+    char reversed[bigint_capacity] = {};
+    while (magnitude != 0) {
+        reversed[value.size++] = static_cast<char>('0' + (magnitude % 10ULL));
+        magnitude /= 10ULL;
+    }
+
+    for (std::size_t i = 0; i < value.size; ++i) {
+        value.digits[i] = reversed[value.size - 1 - i];
+    }
+    return value;
+}
+
+constexpr int digit_value(char ch) {
+    return ch - '0';
+}
+
+consteval bigint_storage make_bigint_storage_from_chars(const char* chars, std::size_t size) {
+    bigint_storage value{};
+    std::size_t offset = 0;
+    if (size != 0 && chars[0] == '-') {
+        value.negative = true;
+        offset = 1;
+    } else if (size != 0 && chars[0] == '+') {
+        offset = 1;
+    }
+
+    value.size = (offset < size) ? (size - offset) : 1;
+    if (value.size == 0) {
+        value.size = 1;
+        value.digits[0] = '0';
+        value.negative = false;
+        return value;
+    }
+
+    for (std::size_t i = 0; i < value.size; ++i) {
+        value.digits[i] = (offset + i < size) ? chars[offset + i] : '0';
+    }
+    return normalize_bigint_storage(value);
+}
+
+template<fixed_string Digits>
+inline constexpr auto bigint_literal_storage_v = make_bigint_storage_from_chars(Digits.value, Digits.size);
+
+template<fixed_string Digits>
+using BigIntLiteral_t = BigInt<bigint_literal_storage_v<Digits>>;
+
+template<long long N>
+using BigIntFromInt_t = BigInt<make_bigint_storage_from_int(N)>;
+
+template<typename T>
+struct ToBigInt;
+
+template<int N>
+struct ToBigInt<Nat<N>> {
+    using type = BigIntFromInt_t<N>;
+};
+
+template<int N>
+struct ToBigInt<Int<N>> {
+    using type = BigIntFromInt_t<N>;
+};
+
+template<auto Storage>
+struct ToBigInt<BigInt<Storage>> {
+    using type = BigInt<normalize_bigint_storage(Storage)>;
+};
+
+template<typename T>
+using ToBigInt_t = typename ToBigInt<T>::type;
+
+template<typename T>
+struct IsIntegerLike : std::false_type {};
+
+template<int N>
+struct IsIntegerLike<Nat<N>> : std::true_type {};
+
+template<int N>
+struct IsIntegerLike<Int<N>> : std::true_type {};
+
+template<auto Storage>
+struct IsIntegerLike<BigInt<Storage>> : std::true_type {};
+
+template<typename T>
+inline constexpr bool is_integer_like_v = IsIntegerLike<T>::value;
+
+template<typename T>
+struct IsRationalLike : std::false_type {};
+
+template<typename Num, typename Den>
+struct IsRationalLike<Rational<Num, Den>> : std::true_type {};
+
+template<typename T>
+inline constexpr bool is_rational_like_v = IsRationalLike<T>::value;
+
+template<auto Left, auto Right>
+constexpr int compare_abs_bigint_storage() {
+    constexpr auto lhs = normalize_bigint_storage(Left);
+    constexpr auto rhs = normalize_bigint_storage(Right);
+
+    if constexpr (lhs.size < rhs.size) {
+        return -1;
+    } else if constexpr (lhs.size > rhs.size) {
+        return 1;
+    } else {
+        for (std::size_t i = 0; i < lhs.size; ++i) {
+            if (lhs.digits[i] < rhs.digits[i]) {
+                return -1;
+            }
+            if (lhs.digits[i] > rhs.digits[i]) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+}
+
+constexpr int compare_abs_bigint_storage(const bigint_storage& lhs, const bigint_storage& rhs) {
+    if (lhs.size < rhs.size) {
+        return -1;
+    }
+    if (lhs.size > rhs.size) {
+        return 1;
+    }
+    for (std::size_t i = 0; i < lhs.size; ++i) {
+        if (lhs.digits[i] < rhs.digits[i]) {
+            return -1;
+        }
+        if (lhs.digits[i] > rhs.digits[i]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+constexpr int compare_bigint_storage(const bigint_storage& lhs_in, const bigint_storage& rhs_in) {
+    const auto lhs = normalize_bigint_storage(lhs_in);
+    const auto rhs = normalize_bigint_storage(rhs_in);
+    if (lhs.negative != rhs.negative) {
+        return lhs.negative ? -1 : 1;
+    }
+    const int abs_cmp = compare_abs_bigint_storage(lhs, rhs);
+    return lhs.negative ? -abs_cmp : abs_cmp;
+}
+
+constexpr bigint_storage add_abs_bigint_storage(const bigint_storage& lhs_in, const bigint_storage& rhs_in) {
+    const auto lhs = normalize_bigint_storage(lhs_in);
+    const auto rhs = normalize_bigint_storage(rhs_in);
+    bigint_storage out{};
+    out.negative = false;
+    std::size_t li = lhs.size;
+    std::size_t ri = rhs.size;
+    std::size_t count = 0;
+    int carry = 0;
+    char reversed[bigint_capacity] = {};
+
+    while (li > 0 || ri > 0 || carry != 0) {
+        const int l = (li > 0) ? digit_value(lhs.digits[--li]) : 0;
+        const int r = (ri > 0) ? digit_value(rhs.digits[--ri]) : 0;
+        const int sum = l + r + carry;
+        reversed[count++] = static_cast<char>('0' + (sum % 10));
+        carry = sum / 10;
+    }
+
+    out.size = count;
+    for (std::size_t i = 0; i < count; ++i) {
+        out.digits[i] = reversed[count - 1 - i];
+    }
+    return normalize_bigint_storage(out);
+}
+
+constexpr bigint_storage sub_abs_bigint_storage(const bigint_storage& lhs_in, const bigint_storage& rhs_in) {
+    const auto lhs = normalize_bigint_storage(lhs_in);
+    const auto rhs = normalize_bigint_storage(rhs_in);
+    bigint_storage out{};
+    out.negative = false;
+    std::size_t li = lhs.size;
+    std::size_t ri = rhs.size;
+    std::size_t count = 0;
+    int borrow = 0;
+    char reversed[bigint_capacity] = {};
+
+    while (li > 0) {
+        int l = digit_value(lhs.digits[--li]) - borrow;
+        const int r = (ri > 0) ? digit_value(rhs.digits[--ri]) : 0;
+        if (l < r) {
+            l += 10;
+            borrow = 1;
+        } else {
+            borrow = 0;
+        }
+        reversed[count++] = static_cast<char>('0' + (l - r));
+    }
+
+    out.size = count;
+    for (std::size_t i = 0; i < count; ++i) {
+        out.digits[i] = reversed[count - 1 - i];
+    }
+    return normalize_bigint_storage(out);
+}
+
+constexpr bigint_storage negate_bigint_storage(bigint_storage value) {
+    value = normalize_bigint_storage(value);
+    if (!bigint_is_zero(value)) {
+        value.negative = !value.negative;
+    }
+    return value;
+}
+
+constexpr bigint_storage add_bigint_storage(const bigint_storage& lhs_in, const bigint_storage& rhs_in) {
+    const auto lhs = normalize_bigint_storage(lhs_in);
+    const auto rhs = normalize_bigint_storage(rhs_in);
+    if (lhs.negative == rhs.negative) {
+        auto out = add_abs_bigint_storage(lhs, rhs);
+        out.negative = lhs.negative;
+        return normalize_bigint_storage(out);
+    }
+
+    const int cmp = compare_abs_bigint_storage(lhs, rhs);
+    if (cmp == 0) {
+        return make_bigint_storage_from_int(0);
+    }
+    if (cmp > 0) {
+        auto out = sub_abs_bigint_storage(lhs, rhs);
+        out.negative = lhs.negative;
+        return normalize_bigint_storage(out);
+    }
+
+    auto out = sub_abs_bigint_storage(rhs, lhs);
+    out.negative = rhs.negative;
+    return normalize_bigint_storage(out);
+}
+
+constexpr bigint_storage sub_bigint_storage(const bigint_storage& lhs, const bigint_storage& rhs) {
+    return add_bigint_storage(lhs, negate_bigint_storage(rhs));
+}
+
+constexpr bigint_storage mul_bigint_storage(const bigint_storage& lhs_in, const bigint_storage& rhs_in) {
+    const auto lhs = normalize_bigint_storage(lhs_in);
+    const auto rhs = normalize_bigint_storage(rhs_in);
+    if (bigint_is_zero(lhs) || bigint_is_zero(rhs)) {
+        return make_bigint_storage_from_int(0);
+    }
+
+    int accum[bigint_capacity] = {};
+    for (std::size_t li = 0; li < lhs.size; ++li) {
+        const int l = digit_value(lhs.digits[lhs.size - 1 - li]);
+        for (std::size_t ri = 0; ri < rhs.size; ++ri) {
+            const int r = digit_value(rhs.digits[rhs.size - 1 - ri]);
+            accum[li + ri] += l * r;
+        }
+    }
+
+    for (std::size_t i = 0; i + 1 < bigint_capacity; ++i) {
+        accum[i + 1] += accum[i] / 10;
+        accum[i] %= 10;
+    }
+
+    std::size_t used = bigint_capacity;
+    while (used > 1 && accum[used - 1] == 0) {
+        --used;
+    }
+
+    bigint_storage out{};
+    out.negative = lhs.negative != rhs.negative;
+    out.size = used;
+    for (std::size_t i = 0; i < used; ++i) {
+        out.digits[i] = static_cast<char>('0' + accum[used - 1 - i]);
+    }
+    return normalize_bigint_storage(out);
+}
+
+constexpr bigint_storage append_bigint_digit(const bigint_storage& lhs_in, int digit) {
+    const auto lhs = normalize_bigint_storage(lhs_in);
+    if (bigint_is_zero(lhs)) {
+        bigint_storage out{};
+        out.size = 1;
+        out.digits[0] = static_cast<char>('0' + digit);
+        out.negative = false;
+        return out;
+    }
+
+    bigint_storage out{};
+    out.negative = false;
+    out.size = lhs.size + 1;
+    for (std::size_t i = 0; i < lhs.size; ++i) {
+        out.digits[i] = lhs.digits[i];
+    }
+    out.digits[lhs.size] = static_cast<char>('0' + digit);
+    return normalize_bigint_storage(out);
+}
+
+struct bigint_divmod_result {
+    bigint_storage quotient;
+    bigint_storage remainder;
+};
+
+constexpr bigint_divmod_result divmod_abs_bigint_storage(const bigint_storage& lhs_in, const bigint_storage& rhs_in) {
+    const auto lhs = normalize_bigint_storage(lhs_in);
+    const auto rhs = normalize_bigint_storage(rhs_in);
+    if (bigint_is_zero(rhs)) {
+        return {make_bigint_storage_from_int(0), lhs};
+    }
+
+    bigint_storage quotient{};
+    quotient.negative = false;
+    quotient.size = lhs.size;
+    bigint_storage remainder = make_bigint_storage_from_int(0);
+
+    for (std::size_t i = 0; i < lhs.size; ++i) {
+        remainder = append_bigint_digit(remainder, digit_value(lhs.digits[i]));
+        int qdigit = 0;
+        while (compare_abs_bigint_storage(remainder, rhs) >= 0) {
+            remainder = sub_abs_bigint_storage(remainder, rhs);
+            ++qdigit;
+        }
+        quotient.digits[i] = static_cast<char>('0' + qdigit);
+    }
+
+    quotient = normalize_bigint_storage(quotient);
+    remainder = normalize_bigint_storage(remainder);
+    return {quotient, remainder};
+}
+
+constexpr bigint_storage abs_bigint_storage(bigint_storage value) {
+    value = normalize_bigint_storage(value);
+    value.negative = false;
+    return value;
+}
+
+constexpr bigint_storage gcd_bigint_storage(bigint_storage lhs, bigint_storage rhs) {
+    lhs = abs_bigint_storage(lhs);
+    rhs = abs_bigint_storage(rhs);
+    while (!bigint_is_zero(rhs)) {
+        const auto divmod = divmod_abs_bigint_storage(lhs, rhs);
+        lhs = rhs;
+        rhs = divmod.remainder;
+    }
+    return normalize_bigint_storage(lhs);
+}
+
+template<typename T>
+struct BigIntStorageOf;
+
+template<int N>
+struct BigIntStorageOf<Nat<N>> {
+    inline static constexpr auto value = make_bigint_storage_from_int(N);
+};
+
+template<int N>
+struct BigIntStorageOf<Int<N>> {
+    inline static constexpr auto value = make_bigint_storage_from_int(N);
+};
+
+template<auto Storage>
+struct BigIntStorageOf<BigInt<Storage>> {
+    inline static constexpr auto value = normalize_bigint_storage(Storage);
+};
+
+template<typename T>
+inline constexpr auto bigint_storage_of_v = BigIntStorageOf<T>::value;
+
+template<auto Storage>
+using NormalizedBigInt_t = BigInt<normalize_bigint_storage(Storage)>;
+
+template<typename Left, typename Right>
+struct BigIntAddResult;
+
+template<typename Left, typename Right>
+struct BigIntSubResult;
+
+template<typename Left, typename Right>
+struct BigIntMulResult;
+
+template<typename Left, typename Right>
+struct BigIntDivResult;
+
+template<typename Left, typename Right>
+struct BigIntModResult;
+
+template<typename Num, typename Den>
+struct NormalizeRational {
+private:
+    inline static constexpr auto raw_num = bigint_storage_of_v<Num>;
+    inline static constexpr auto raw_den = bigint_storage_of_v<Den>;
+    inline static constexpr auto gcd = gcd_bigint_storage(raw_num, raw_den);
+    inline static constexpr auto reduced_num = divmod_abs_bigint_storage(abs_bigint_storage(raw_num), gcd).quotient;
+    inline static constexpr auto reduced_den = divmod_abs_bigint_storage(abs_bigint_storage(raw_den), gcd).quotient;
+    inline static constexpr auto signed_num = [] {
+        auto out = reduced_num;
+        out.negative = raw_num.negative != raw_den.negative;
+        return normalize_bigint_storage(out);
+    }();
+
+public:
+    using type = Rational<NormalizedBigInt_t<signed_num>, NormalizedBigInt_t<reduced_den>>;
+};
+
+template<typename Num, typename Den>
+using NormalizeRational_t = typename NormalizeRational<Num, Den>::type;
+
+template<typename T>
+struct ToRational;
+
+template<int N>
+struct ToRational<Nat<N>> {
+    using type = Rational<BigIntFromInt_t<N>, BigIntFromInt_t<1>>;
+};
+
+template<int N>
+struct ToRational<Int<N>> {
+    using type = Rational<BigIntFromInt_t<N>, BigIntFromInt_t<1>>;
+};
+
+template<auto Storage>
+struct ToRational<BigInt<Storage>> {
+    using type = Rational<NormalizedBigInt_t<Storage>, BigIntFromInt_t<1>>;
+};
+
+template<typename Num, typename Den>
+struct ToRational<Rational<Num, Den>> {
+    using type = NormalizeRational_t<Num, Den>;
+};
+
+template<typename T>
+using ToRational_t = typename ToRational<T>::type;
+
+template<typename T>
+struct RationalParts;
+
+template<typename Num, typename Den>
+struct RationalParts<Rational<Num, Den>> {
+    using numerator = Num;
+    using denominator = Den;
+};
 
 template<std::size_t N, std::size_t M>
 constexpr bool string_starts_with_chars(const char (&text)[N], const char (&prefix)[M]) {
@@ -869,12 +1344,22 @@ struct IntrinsicStep<Call<Mul, Int<Left>, Int<Right>>> {
 
 template<int Left, int Right>
 struct IntrinsicStep<Call<Div, Nat<Left>, Nat<Right>>> {
-    using type = ReductionResult<Nat<(Right == 0 ? 0 : Left / Right)>, true>;
+    using type = ReductionResult<
+        IfType_t<
+            (Right != 0 && (Left % Right) == 0),
+            Nat<Left / Right>,
+            typename BigIntDivResult<Nat<Left>, Nat<Right>>::type>,
+        true>;
 };
 
 template<int Left, int Right>
 struct IntrinsicStep<Call<Div, Int<Left>, Int<Right>>> {
-    using type = ReductionResult<Int<(Right == 0 ? 0 : Left / Right)>, true>;
+    using type = ReductionResult<
+        IfType_t<
+            (Right != 0 && (Left % Right) == 0),
+            Int<Left / Right>,
+            typename BigIntDivResult<Int<Left>, Int<Right>>::type>,
+        true>;
 };
 
 template<int Left, int Right>
@@ -955,6 +1440,308 @@ struct IntrinsicStep<Call<IsZero, Nat<N>>> {
 template<int N>
 struct IntrinsicStep<Call<IsZero, Int<N>>> {
     using type = ReductionResult<Bool<(N == 0)>, true>;
+};
+
+template<typename Left, typename Right>
+struct BigIntAddResult {
+    using type = NormalizedBigInt_t<add_bigint_storage(bigint_storage_of_v<Left>, bigint_storage_of_v<Right>)>;
+};
+
+template<typename Left, typename Right>
+struct BigIntSubResult {
+    using type = NormalizedBigInt_t<sub_bigint_storage(bigint_storage_of_v<Left>, bigint_storage_of_v<Right>)>;
+};
+
+template<typename Left, typename Right>
+struct BigIntMulResult {
+    using type = NormalizedBigInt_t<mul_bigint_storage(bigint_storage_of_v<Left>, bigint_storage_of_v<Right>)>;
+};
+
+template<typename Left, typename Right>
+struct BigIntDivResult {
+private:
+    inline static constexpr auto divmod = divmod_abs_bigint_storage(
+        abs_bigint_storage(bigint_storage_of_v<Left>),
+        abs_bigint_storage(bigint_storage_of_v<Right>));
+    inline static constexpr auto quotient = [] {
+        auto out = divmod.quotient;
+        out.negative = bigint_storage_of_v<Left>.negative != bigint_storage_of_v<Right>.negative;
+        return normalize_bigint_storage(out);
+    }();
+
+public:
+    using type = IfType_t<
+        bigint_is_zero(divmod.remainder),
+        NormalizedBigInt_t<quotient>,
+        NormalizeRational_t<NormalizedBigInt_t<bigint_storage_of_v<Left>>, NormalizedBigInt_t<bigint_storage_of_v<Right>>>>;
+};
+
+template<typename Left, typename Right>
+struct BigIntModResult {
+private:
+    inline static constexpr auto divmod = divmod_abs_bigint_storage(
+        abs_bigint_storage(bigint_storage_of_v<Left>),
+        abs_bigint_storage(bigint_storage_of_v<Right>));
+    inline static constexpr auto remainder = [] {
+        auto out = divmod.remainder;
+        out.negative = bigint_storage_of_v<Left>.negative;
+        return normalize_bigint_storage(out);
+    }();
+
+public:
+    using type = NormalizedBigInt_t<remainder>;
+};
+
+template<typename Left, typename Right>
+struct RationalAddResult {
+private:
+    using left = ToRational_t<Left>;
+    using right = ToRational_t<Right>;
+    using left_num = typename RationalParts<left>::numerator;
+    using left_den = typename RationalParts<left>::denominator;
+    using right_num = typename RationalParts<right>::numerator;
+    using right_den = typename RationalParts<right>::denominator;
+    using num_left = typename BigIntMulResult<left_num, right_den>::type;
+    using num_right = typename BigIntMulResult<right_num, left_den>::type;
+    using den = typename BigIntMulResult<left_den, right_den>::type;
+
+public:
+    using type = NormalizeRational_t<typename BigIntAddResult<num_left, num_right>::type, den>;
+};
+
+template<bool UseRational, typename Left, typename Right>
+struct NumericAddDispatch;
+
+template<typename Left, typename Right>
+struct NumericAddDispatch<false, Left, Right> {
+    using type = typename BigIntAddResult<Left, Right>::type;
+};
+
+template<typename Left, typename Right>
+struct NumericAddDispatch<true, Left, Right> {
+    using type = typename RationalAddResult<Left, Right>::type;
+};
+
+template<typename Left, typename Right>
+struct RationalSubResult {
+private:
+    using left = ToRational_t<Left>;
+    using right = ToRational_t<Right>;
+    using left_num = typename RationalParts<left>::numerator;
+    using left_den = typename RationalParts<left>::denominator;
+    using right_num = typename RationalParts<right>::numerator;
+    using right_den = typename RationalParts<right>::denominator;
+    using num_left = typename BigIntMulResult<left_num, right_den>::type;
+    using num_right = typename BigIntMulResult<right_num, left_den>::type;
+    using den = typename BigIntMulResult<left_den, right_den>::type;
+
+public:
+    using type = NormalizeRational_t<typename BigIntSubResult<num_left, num_right>::type, den>;
+};
+
+template<bool UseRational, typename Left, typename Right>
+struct NumericSubDispatch;
+
+template<typename Left, typename Right>
+struct NumericSubDispatch<false, Left, Right> {
+    using type = typename BigIntSubResult<Left, Right>::type;
+};
+
+template<typename Left, typename Right>
+struct NumericSubDispatch<true, Left, Right> {
+    using type = typename RationalSubResult<Left, Right>::type;
+};
+
+template<typename Left, typename Right>
+struct RationalMulResult {
+private:
+    using left = ToRational_t<Left>;
+    using right = ToRational_t<Right>;
+
+public:
+    using type = NormalizeRational_t<
+        typename BigIntMulResult<typename RationalParts<left>::numerator, typename RationalParts<right>::numerator>::type,
+        typename BigIntMulResult<typename RationalParts<left>::denominator, typename RationalParts<right>::denominator>::type>;
+};
+
+template<bool UseRational, typename Left, typename Right>
+struct NumericMulDispatch;
+
+template<typename Left, typename Right>
+struct NumericMulDispatch<false, Left, Right> {
+    using type = typename BigIntMulResult<Left, Right>::type;
+};
+
+template<typename Left, typename Right>
+struct NumericMulDispatch<true, Left, Right> {
+    using type = typename RationalMulResult<Left, Right>::type;
+};
+
+template<typename Left, typename Right>
+struct RationalDivResult {
+private:
+    using left = ToRational_t<Left>;
+    using right = ToRational_t<Right>;
+
+public:
+    using type = NormalizeRational_t<
+        typename BigIntMulResult<typename RationalParts<left>::numerator, typename RationalParts<right>::denominator>::type,
+        typename BigIntMulResult<typename RationalParts<left>::denominator, typename RationalParts<right>::numerator>::type>;
+};
+
+template<bool UseRational, typename Left, typename Right>
+struct NumericDivDispatch;
+
+template<typename Left, typename Right>
+struct NumericDivDispatch<false, Left, Right> {
+    using type = typename BigIntDivResult<Left, Right>::type;
+};
+
+template<typename Left, typename Right>
+struct NumericDivDispatch<true, Left, Right> {
+    using type = typename RationalDivResult<Left, Right>::type;
+};
+
+template<typename Number>
+struct RationalAbsResult {
+private:
+    using rat = ToRational_t<Number>;
+    inline static constexpr auto abs_num = abs_bigint_storage(bigint_storage_of_v<typename RationalParts<rat>::numerator>);
+
+public:
+    using type = NormalizeRational_t<NormalizedBigInt_t<abs_num>, typename RationalParts<rat>::denominator>;
+};
+
+template<auto Storage>
+struct IntrinsicStep<Call<Succ, BigInt<Storage>>> {
+    using type = ReductionResult<typename BigIntAddResult<BigInt<Storage>, Int<1>>::type, true>;
+};
+
+template<auto Storage>
+struct IntrinsicStep<Call<Pred, BigInt<Storage>>> {
+    using type = ReductionResult<typename BigIntSubResult<BigInt<Storage>, Int<1>>::type, true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_integer_like_v<Left> || is_rational_like_v<Left>) &&
+              (is_integer_like_v<Right> || is_rational_like_v<Right>))
+struct IntrinsicStep<Call<Add, Left, Right>> {
+    using type = ReductionResult<
+        typename NumericAddDispatch<is_rational_like_v<Left> || is_rational_like_v<Right>, Left, Right>::type,
+        true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_integer_like_v<Left> || is_rational_like_v<Left>) &&
+              (is_integer_like_v<Right> || is_rational_like_v<Right>))
+struct IntrinsicStep<Call<Sub, Left, Right>> {
+    using type = ReductionResult<
+        typename NumericSubDispatch<is_rational_like_v<Left> || is_rational_like_v<Right>, Left, Right>::type,
+        true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_integer_like_v<Left> || is_rational_like_v<Left>) &&
+              (is_integer_like_v<Right> || is_rational_like_v<Right>))
+struct IntrinsicStep<Call<Mul, Left, Right>> {
+    using type = ReductionResult<
+        typename NumericMulDispatch<is_rational_like_v<Left> || is_rational_like_v<Right>, Left, Right>::type,
+        true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_integer_like_v<Left> || is_rational_like_v<Left>) &&
+              (is_integer_like_v<Right> || is_rational_like_v<Right>))
+struct IntrinsicStep<Call<Div, Left, Right>> {
+    using type = ReductionResult<
+        typename NumericDivDispatch<is_rational_like_v<Left> || is_rational_like_v<Right>, Left, Right>::type,
+        true>;
+};
+
+template<typename Left, typename Right>
+    requires (is_integer_like_v<Left> && is_integer_like_v<Right>)
+struct IntrinsicStep<Call<Mod, Left, Right>> {
+    using type = ReductionResult<typename BigIntModResult<Left, Right>::type, true>;
+};
+
+template<auto Storage>
+struct IntrinsicStep<Call<Abs, BigInt<Storage>>> {
+    using type = ReductionResult<NormalizedBigInt_t<abs_bigint_storage(Storage)>, true>;
+};
+
+template<typename Num, typename Den>
+struct IntrinsicStep<Call<Abs, Rational<Num, Den>>> {
+    using type = ReductionResult<typename RationalAbsResult<Rational<Num, Den>>::type, true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_integer_like_v<Left> || is_rational_like_v<Left>) &&
+              (is_integer_like_v<Right> || is_rational_like_v<Right>))
+struct IntrinsicStep<Call<Eq, Left, Right>> {
+private:
+    using diff = typename RationalSubResult<Left, Right>::type;
+    using num = typename RationalParts<diff>::numerator;
+
+public:
+    using type = ReductionResult<Bool<bigint_is_zero(bigint_storage_of_v<num>)>, true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_integer_like_v<Left> || is_rational_like_v<Left>) &&
+              (is_integer_like_v<Right> || is_rational_like_v<Right>))
+struct IntrinsicStep<Call<Lt, Left, Right>> {
+private:
+    using diff = typename RationalSubResult<Left, Right>::type;
+    using num = typename RationalParts<diff>::numerator;
+
+public:
+    using type = ReductionResult<Bool<(compare_bigint_storage(bigint_storage_of_v<num>, make_bigint_storage_from_int(0)) < 0)>, true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_integer_like_v<Left> || is_rational_like_v<Left>) &&
+              (is_integer_like_v<Right> || is_rational_like_v<Right>))
+struct IntrinsicStep<Call<Lte, Left, Right>> {
+private:
+    using diff = typename RationalSubResult<Left, Right>::type;
+    using num = typename RationalParts<diff>::numerator;
+
+public:
+    using type = ReductionResult<Bool<(compare_bigint_storage(bigint_storage_of_v<num>, make_bigint_storage_from_int(0)) <= 0)>, true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_integer_like_v<Left> || is_rational_like_v<Left>) &&
+              (is_integer_like_v<Right> || is_rational_like_v<Right>))
+struct IntrinsicStep<Call<Gt, Left, Right>> {
+private:
+    using diff = typename RationalSubResult<Left, Right>::type;
+    using num = typename RationalParts<diff>::numerator;
+
+public:
+    using type = ReductionResult<Bool<(compare_bigint_storage(bigint_storage_of_v<num>, make_bigint_storage_from_int(0)) > 0)>, true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_integer_like_v<Left> || is_rational_like_v<Left>) &&
+              (is_integer_like_v<Right> || is_rational_like_v<Right>))
+struct IntrinsicStep<Call<Gte, Left, Right>> {
+private:
+    using diff = typename RationalSubResult<Left, Right>::type;
+    using num = typename RationalParts<diff>::numerator;
+
+public:
+    using type = ReductionResult<Bool<(compare_bigint_storage(bigint_storage_of_v<num>, make_bigint_storage_from_int(0)) >= 0)>, true>;
+};
+
+template<auto Storage>
+struct IntrinsicStep<Call<IsZero, BigInt<Storage>>> {
+    using type = ReductionResult<Bool<bigint_is_zero(normalize_bigint_storage(Storage))>, true>;
+};
+
+template<typename Num, typename Den>
+struct IntrinsicStep<Call<IsZero, Rational<Num, Den>>> {
+    using type = ReductionResult<Bool<bigint_is_zero(bigint_storage_of_v<Num>)>, true>;
 };
 
 template<char... LeftChars, char... RightChars>
@@ -1183,5 +1970,11 @@ struct IntrinsicStep<Call<ThreeSum, List<Items...>>> {
 };
 
 } // namespace detail
+
+template<fixed_string Digits>
+using BigIntLiteral_t = detail::BigIntLiteral_t<Digits>;
+
+template<typename Num, typename Den>
+using Rational_t = detail::NormalizeRational_t<Num, Den>;
 
 } // namespace lc

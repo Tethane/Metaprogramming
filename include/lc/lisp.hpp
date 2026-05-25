@@ -71,6 +71,8 @@ struct RecursiveClosure {};
 
 struct NatType {};
 struct IntType {};
+struct BigIntType {};
+struct RationalType {};
 struct BoolType {};
 struct StringType {};
 struct NoneType {};
@@ -153,6 +155,7 @@ template<> struct IsPrimitiveTag<Mul> : std::true_type {};
 template<> struct IsPrimitiveTag<Div> : std::true_type {};
 template<> struct IsPrimitiveTag<Mod> : std::true_type {};
 template<> struct IsPrimitiveTag<Pow> : std::true_type {};
+template<> struct IsPrimitiveTag<Abs> : std::true_type {};
 template<> struct IsPrimitiveTag<Eq> : std::true_type {};
 template<> struct IsPrimitiveTag<Lt> : std::true_type {};
 template<> struct IsPrimitiveTag<Lte> : std::true_type {};
@@ -206,9 +209,19 @@ struct ValueStaticType<Int<N>> {
     using type = IntType;
 };
 
+template<auto Storage>
+struct ValueStaticType<BigInt<Storage>> {
+    using type = BigIntType;
+};
+
 template<bool B>
 struct ValueStaticType<Bool<B>> {
     using type = BoolType;
+};
+
+template<typename Num, typename Den>
+struct ValueStaticType<Rational<Num, Den>> {
+    using type = RationalType;
 };
 
 template<char... Chars>
@@ -536,6 +549,184 @@ struct EvalLisp {
 
 template<typename Expr, typename Env = AssocMap<>>
 using EvalLisp_t = typename EvalLisp<Expr, Env>::type;
+
+template<typename Expr>
+struct OptimizeLisp {
+    using type = Expr;
+};
+
+template<typename Expr>
+using OptimizeLisp_t = typename OptimizeLisp<Expr>::type;
+
+template<typename T>
+struct IsImmediateValue : std::false_type {};
+
+template<int N>
+struct IsImmediateValue<Nat<N>> : std::true_type {};
+
+template<int N>
+struct IsImmediateValue<Int<N>> : std::true_type {};
+
+template<auto Storage>
+struct IsImmediateValue<BigInt<Storage>> : std::true_type {};
+
+template<typename Num, typename Den>
+struct IsImmediateValue<Rational<Num, Den>> : std::true_type {};
+
+template<bool B>
+struct IsImmediateValue<Bool<B>> : std::true_type {};
+
+template<char... Chars>
+struct IsImmediateValue<String<Chars...>> : std::true_type {};
+
+template<typename... Items>
+struct IsImmediateValue<List<Items...>> : std::true_type {};
+
+template<typename... Items>
+struct IsImmediateValue<Set<Items...>> : std::true_type {};
+
+template<typename... Entries>
+struct IsImmediateValue<AssocMap<Entries...>> : std::true_type {};
+
+template<>
+struct IsImmediateValue<None> : std::true_type {};
+
+template<typename... Ts>
+struct ExprPack {};
+
+template<typename Pack, typename Expr>
+struct ExprPackAppend;
+
+template<typename... Done, typename Expr>
+struct ExprPackAppend<ExprPack<Done...>, Expr> {
+    using type = ExprPack<Done..., Expr>;
+};
+
+template<typename Pack, typename Expr>
+using ExprPackAppend_t = typename ExprPackAppend<Pack, Expr>::type;
+
+template<typename Pack>
+struct BeginToExpr;
+
+template<>
+struct BeginToExpr<ExprPack<>> {
+    using type = BeginExpr<>;
+};
+
+template<typename Expr>
+struct BeginToExpr<ExprPack<Expr>> {
+    using type = Expr;
+};
+
+template<typename Expr, typename Next, typename... Rest>
+struct BeginToExpr<ExprPack<Expr, Next, Rest...>> {
+    using type = BeginExpr<Expr, Next, Rest...>;
+};
+
+template<typename Pack, typename Expr>
+struct FlattenBeginExpr {
+    using type = ExprPackAppend_t<Pack, Expr>;
+};
+
+template<typename... Done, typename... BeginExprs>
+struct FlattenBeginExpr<ExprPack<Done...>, BeginExpr<BeginExprs...>> {
+    using type = ExprPack<Done..., BeginExprs...>;
+};
+
+template<typename Pack, typename... Exprs>
+struct OptimizeBeginPack;
+
+template<typename Pack>
+struct OptimizeBeginPack<Pack> {
+    using type = Pack;
+};
+
+template<typename Pack, typename Expr, typename... Rest>
+struct OptimizeBeginPack<Pack, Expr, Rest...> {
+private:
+    using optimized = OptimizeLisp_t<Expr>;
+    using flattened = typename FlattenBeginExpr<Pack, optimized>::type;
+
+public:
+    using type = typename OptimizeBeginPack<flattened, Rest...>::type;
+};
+
+template<typename... Exprs>
+struct OptimizeLisp<BeginExpr<Exprs...>> {
+private:
+    using flat = typename OptimizeBeginPack<ExprPack<>, Exprs...>::type;
+
+public:
+    using type = typename BeginToExpr<flat>::type;
+};
+
+template<typename Cond, typename ThenExpr, typename ElseExpr>
+struct OptimizeLisp<IfExpr<Cond, ThenExpr, ElseExpr>> {
+private:
+    using cond = OptimizeLisp_t<Cond>;
+    using then_expr = OptimizeLisp_t<ThenExpr>;
+    using else_expr = OptimizeLisp_t<ElseExpr>;
+
+public:
+    using type = IfType_t<
+        IsSame<cond, Bool<true>>::value,
+        then_expr,
+        IfType_t<
+            IsSame<cond, Bool<false>>::value,
+            else_expr,
+            IfExpr<cond, then_expr, else_expr>
+        >
+    >;
+};
+
+template<typename ParamsT, typename Body>
+struct OptimizeLisp<LambdaExpr<ParamsT, Body>> {
+    using type = LambdaExpr<ParamsT, OptimizeLisp_t<Body>>;
+};
+
+template<typename Name, typename Expr>
+struct OptimizeLisp<Binding<Name, Expr>> {
+    using type = Binding<Name, OptimizeLisp_t<Expr>>;
+};
+
+template<typename... BindingsT>
+struct OptimizeLisp<Bindings<BindingsT...>> {
+    using type = Bindings<OptimizeLisp_t<BindingsT>...>;
+};
+
+template<typename BindingsT, typename Body>
+struct OptimizeLisp<LetExpr<BindingsT, Body>> {
+    using type = LetExpr<OptimizeLisp_t<BindingsT>, OptimizeLisp_t<Body>>;
+};
+
+template<typename Name, typename Expr>
+struct OptimizeLisp<DefineForm<Name, Expr>> {
+    using type = DefineForm<Name, OptimizeLisp_t<Expr>>;
+};
+
+template<typename Expr>
+struct OptimizeLisp<ExprForm<Expr>> {
+    using type = ExprForm<OptimizeLisp_t<Expr>>;
+};
+
+template<typename... Forms>
+struct OptimizeLisp<ProgramExpr<Forms...>> {
+    using type = ProgramExpr<OptimizeLisp_t<Forms>...>;
+};
+
+template<typename FnExpr, typename... ArgExprs>
+struct OptimizeLisp<CallExpr<FnExpr, ArgExprs...>> {
+private:
+    using fn = OptimizeLisp_t<FnExpr>;
+    using rebuilt = CallExpr<fn, OptimizeLisp_t<ArgExprs>...>;
+
+public:
+    using type = IfType_t<
+        IsPrimitiveTag<fn>::value && (IsImmediateValue<OptimizeLisp_t<ArgExprs>>::value && ...),
+        Normalize_t<Apply_t<fn, OptimizeLisp_t<ArgExprs>...>, 4096>,
+        rebuilt
+    >;
+};
 
 template<typename CondValue, bool Error, typename Env, typename ThenExpr, typename ElseExpr>
 struct EvalIfDispatch;
@@ -943,6 +1134,48 @@ struct TypeApply {
     using type = TypeError<msg_call_type_error>;
 };
 
+template<typename T>
+struct IsIntegerNumericType : std::false_type {};
+
+template<>
+struct IsIntegerNumericType<NatType> : std::true_type {};
+
+template<>
+struct IsIntegerNumericType<IntType> : std::true_type {};
+
+template<>
+struct IsIntegerNumericType<BigIntType> : std::true_type {};
+
+template<typename T>
+struct IsNumericType : IsIntegerNumericType<T> {};
+
+template<>
+struct IsNumericType<RationalType> : std::true_type {};
+
+template<typename Left, typename Right>
+struct AdditiveNumericType {
+    using type = IfType_t<
+        IsSame<Left, RationalType>::value || IsSame<Right, RationalType>::value,
+        RationalType,
+        IfType_t<
+            IsSame<Left, BigIntType>::value || IsSame<Right, BigIntType>::value,
+            BigIntType,
+            IfType_t<
+                IsSame<Left, IntType>::value || IsSame<Right, IntType>::value,
+                IntType,
+                NatType
+            >
+        >
+    >;
+};
+
+template<typename Left, typename Right>
+using AdditiveNumericType_t = typename AdditiveNumericType<Left, Right>::type;
+
+template<typename Left, typename Right>
+struct ComparableNumericTypes
+    : std::bool_constant<IsNumericType<Left>::value && IsNumericType<Right>::value> {};
+
 template<typename ParamsT, typename ReturnType, typename... ArgTypes>
 struct TypeApply<FunctionType<ParamsT, ReturnType>, TypePack<ArgTypes...>> {
 private:
@@ -975,6 +1208,12 @@ struct TypeApply<PrimitiveType<Add>, TypePack<IntType, IntType>> {
     using type = IntType;
 };
 
+template<typename Left, typename Right>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Add>, TypePack<Left, Right>> {
+    using type = AdditiveNumericType_t<Left, Right>;
+};
+
 template<>
 struct TypeApply<PrimitiveType<Sub>, TypePack<NatType, NatType>> {
     using type = NatType;
@@ -983,6 +1222,20 @@ struct TypeApply<PrimitiveType<Sub>, TypePack<NatType, NatType>> {
 template<>
 struct TypeApply<PrimitiveType<Sub>, TypePack<IntType, IntType>> {
     using type = IntType;
+};
+
+template<typename Left, typename Right>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Sub>, TypePack<Left, Right>> {
+    using type = IfType_t<
+        IsSame<Left, RationalType>::value || IsSame<Right, RationalType>::value,
+        RationalType,
+        IfType_t<
+            IsSame<Left, NatType>::value && IsSame<Right, NatType>::value,
+            NatType,
+            AdditiveNumericType_t<Left, Right>
+        >
+    >;
 };
 
 template<>
@@ -995,6 +1248,12 @@ struct TypeApply<PrimitiveType<Mul>, TypePack<IntType, IntType>> {
     using type = IntType;
 };
 
+template<typename Left, typename Right>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Mul>, TypePack<Left, Right>> {
+    using type = AdditiveNumericType_t<Left, Right>;
+};
+
 template<>
 struct TypeApply<PrimitiveType<Div>, TypePack<NatType, NatType>> {
     using type = NatType;
@@ -1003,6 +1262,16 @@ struct TypeApply<PrimitiveType<Div>, TypePack<NatType, NatType>> {
 template<>
 struct TypeApply<PrimitiveType<Div>, TypePack<IntType, IntType>> {
     using type = IntType;
+};
+
+template<typename Left, typename Right>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Div>, TypePack<Left, Right>> {
+    using type = IfType_t<
+        IsIntegerNumericType<Left>::value && IsIntegerNumericType<Right>::value,
+        RationalType,
+        RationalType
+    >;
 };
 
 template<>
@@ -1015,6 +1284,12 @@ struct TypeApply<PrimitiveType<Mod>, TypePack<IntType, IntType>> {
     using type = IntType;
 };
 
+template<typename Left, typename Right>
+    requires (IsIntegerNumericType<Left>::value && IsIntegerNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Mod>, TypePack<Left, Right>> {
+    using type = AdditiveNumericType_t<Left, Right>;
+};
+
 template<>
 struct TypeApply<PrimitiveType<Pow>, TypePack<NatType, NatType>> {
     using type = NatType;
@@ -1023,6 +1298,18 @@ struct TypeApply<PrimitiveType<Pow>, TypePack<NatType, NatType>> {
 template<>
 struct TypeApply<PrimitiveType<Pow>, TypePack<IntType, NatType>> {
     using type = IntType;
+};
+
+template<typename Left, typename Right>
+    requires (IsNumericType<Left>::value && IsIntegerNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Pow>, TypePack<Left, Right>> {
+    using type = AdditiveNumericType_t<Left, Right>;
+};
+
+template<typename Arg>
+    requires (IsNumericType<Arg>::value)
+struct TypeApply<PrimitiveType<Abs>, TypePack<Arg>> {
+    using type = Arg;
 };
 
 template<>
@@ -1040,6 +1327,12 @@ struct TypeApply<PrimitiveType<Eq>, TypePack<StringType, StringType>> {
     using type = BoolType;
 };
 
+template<typename Left, typename Right>
+    requires (ComparableNumericTypes<Left, Right>::value)
+struct TypeApply<PrimitiveType<Eq>, TypePack<Left, Right>> {
+    using type = BoolType;
+};
+
 template<>
 struct TypeApply<PrimitiveType<Lt>, TypePack<NatType, NatType>> {
     using type = BoolType;
@@ -1047,6 +1340,12 @@ struct TypeApply<PrimitiveType<Lt>, TypePack<NatType, NatType>> {
 
 template<>
 struct TypeApply<PrimitiveType<Lt>, TypePack<IntType, IntType>> {
+    using type = BoolType;
+};
+
+template<typename Left, typename Right>
+    requires (ComparableNumericTypes<Left, Right>::value)
+struct TypeApply<PrimitiveType<Lt>, TypePack<Left, Right>> {
     using type = BoolType;
 };
 
@@ -1060,6 +1359,12 @@ struct TypeApply<PrimitiveType<Lte>, TypePack<IntType, IntType>> {
     using type = BoolType;
 };
 
+template<typename Left, typename Right>
+    requires (ComparableNumericTypes<Left, Right>::value)
+struct TypeApply<PrimitiveType<Lte>, TypePack<Left, Right>> {
+    using type = BoolType;
+};
+
 template<>
 struct TypeApply<PrimitiveType<Gt>, TypePack<NatType, NatType>> {
     using type = BoolType;
@@ -1067,6 +1372,12 @@ struct TypeApply<PrimitiveType<Gt>, TypePack<NatType, NatType>> {
 
 template<>
 struct TypeApply<PrimitiveType<Gt>, TypePack<IntType, IntType>> {
+    using type = BoolType;
+};
+
+template<typename Left, typename Right>
+    requires (ComparableNumericTypes<Left, Right>::value)
+struct TypeApply<PrimitiveType<Gt>, TypePack<Left, Right>> {
     using type = BoolType;
 };
 
@@ -1080,6 +1391,12 @@ struct TypeApply<PrimitiveType<Gte>, TypePack<IntType, IntType>> {
     using type = BoolType;
 };
 
+template<typename Left, typename Right>
+    requires (ComparableNumericTypes<Left, Right>::value)
+struct TypeApply<PrimitiveType<Gte>, TypePack<Left, Right>> {
+    using type = BoolType;
+};
+
 template<>
 struct TypeApply<PrimitiveType<IsZero>, TypePack<NatType>> {
     using type = BoolType;
@@ -1087,6 +1404,12 @@ struct TypeApply<PrimitiveType<IsZero>, TypePack<NatType>> {
 
 template<>
 struct TypeApply<PrimitiveType<IsZero>, TypePack<IntType>> {
+    using type = BoolType;
+};
+
+template<typename Arg>
+    requires (IsNumericType<Arg>::value)
+struct TypeApply<PrimitiveType<IsZero>, TypePack<Arg>> {
     using type = BoolType;
 };
 

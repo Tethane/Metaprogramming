@@ -1,4 +1,5 @@
 #include "lambda.hpp"
+#include "generated/lc/scripts.hpp"
 
 using namespace lc;
 
@@ -17,6 +18,15 @@ using LambdaCalculusExpected = String<'l', 'a', 'm', 'b', 'd', 'a', ' ', 'c', 'a
 using CalculusOnlyExpected = String<'c', 'a', 'l', 'c', 'u', 'l', 'u', 's'>;
 using PrettyLambdaExpected = String<'(', 'l', 'a', 'm', 'b', 'd', 'a', ' ', '(', '(', 'x', ' ', 'I', 'n', 't', ')', ')', ' ', 'x', ')'>;
 using PrettyCoreIdentityExpected = String<'(', 'l', 'a', 'm', 'b', 'd', 'a', ' ', 'v', '0', ')'>;
+using HugeLeft = BigIntLiteral_t<"123456789012345678901234567890">;
+using HugeRight = BigIntLiteral_t<"987654321098765432109876543210">;
+using HugeSumExpected = BigIntLiteral_t<"1111111110111111111011111111100">;
+using RationalHalfExpected = Rational_t<BigIntLiteral_t<"1">, BigIntLiteral_t<"2">>;
+using ScriptFactorialResult = EvalScript_t<generated_scripts::factorial_source>;
+using ScriptFactorialProgram = ReadScript_t<generated_scripts::factorial_source>;
+using ScriptListLengthResult = EvalScript_t<generated_scripts::list_length_source>;
+using ScriptRationalResult = EvalScript_t<generated_scripts::rational_sum_source>;
+using ScriptBigIntResult = EvalScript_t<generated_scripts::bigint_sum_source>;
 
 static_assert(IsSame<Normalize_t<Apply_t<I, A>>, A>::value);
 static_assert(IsSame<Normalize_t<Apply_t<K, A, Bv>>, A>::value);
@@ -114,6 +124,14 @@ static_assert(IsSame<EvalLisp_t<IfExpr<True, Int<1>, Int<2>>>, Int<1>>::value);
 static_assert(IsSame<Normalize_t<Apply_t<Factorial, Three>, 4096>, Six>::value);
 static_assert(IsSame<Normalize_t<O, 8>, OutOfFuel<O>>::value);
 static_assert(IsSame<NormalizeChecked_t<O, 16>, CycleDetected<O>>::value);
+static_assert(IsSame<Normalize_t<Apply_t<Add, HugeLeft, HugeRight>>, HugeSumExpected>::value);
+static_assert(IsSame<Normalize_t<Apply_t<Div, Int<1>, Int<2>>>, RationalHalfExpected>::value);
+static_assert(IsSame<Normalize_t<Apply_t<Add, Rational_t<BigIntLiteral_t<"1">, BigIntLiteral_t<"3">>, Rational_t<BigIntLiteral_t<"1">, BigIntLiteral_t<"6">>>>, RationalHalfExpected>::value);
+static_assert(IsSame<ScriptFactorialResult, Int<120>>::value);
+static_assert(IsSame<TypeCheckScript_t<generated_scripts::factorial_source>, IntType>::value);
+static_assert(IsSame<ScriptListLengthResult, Nat<5>>::value);
+static_assert(IsSame<ScriptRationalResult, RationalHalfExpected>::value);
+static_assert(IsSame<ScriptBigIntResult, HugeSumExpected>::value);
 
 static_assert(IsSame<PrimesUpTo50, PrimeListExpected>::value);
 static_assert(IsSame<PrimeCountUpTo50, Nat<15>>::value);
@@ -135,6 +153,9 @@ static_assert(pretty_string_view_v<ReaderClosureProgram> == "(let ((x 10) (make 
 static_assert(pretty_string_view_v<ReadSource_t<"(+ 1 2">> == "#<reader-error unterminated-list>");
 static_assert(pretty_string_view_v<ReaderExpandList> == "(cons 1 (cons 2 (cons 3 '())))");
 static_assert(pretty_string_view_v<ReaderExpandCond> == "(if true 1 2)");
+static_assert(pretty_string_view_v<ScriptFactorialProgram>.size() > 20);
+static_assert(to_bigint_string_view_v<HugeSumExpected> == "1111111110111111111011111111100");
+static_assert(to_rational_string_view_v<ScriptRationalResult> == "1/2");
 static_assert(to_array_v<UnionSetExample>[3] == 4);
 static_assert(to_array_v<TwoSumExample>[0] == 0);
 static_assert(to_array_v<TwoSumExample>[1] == 1);

@@ -1,0 +1,5 @@
+(let ((x 10)
+      (make (lambda ((y Int))
+              (lambda ((z Int))
+                (+ (+ x y) z)))))
+  ((make 5) 7))

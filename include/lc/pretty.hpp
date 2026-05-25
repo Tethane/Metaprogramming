@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include "runtime.hpp"
 #include "lisp.hpp"
 
@@ -27,6 +29,24 @@ struct StringCatMany<A, B, Rest...> {
 
 template<typename... Strings>
 using StringCatMany_t = typename StringCatMany<Strings...>::type;
+
+template<auto Storage, typename Seq>
+struct BigIntDigitsString;
+
+template<auto Storage, std::size_t... Indices>
+struct BigIntDigitsString<Storage, std::index_sequence<Indices...>> {
+    using type = String<Storage.digits[Indices]...>;
+};
+
+template<auto Storage>
+struct BigIntString {
+private:
+    inline static constexpr auto normalized = detail::normalize_bigint_storage(Storage);
+    using digits = typename BigIntDigitsString<normalized, std::make_index_sequence<normalized.size>>::type;
+
+public:
+    using type = IfType_t<normalized.negative, StringCatMany_t<String<'-'>, digits>, digits>;
+};
 
 template<int N, bool Small = (N < 10)>
 struct NatDigits;
@@ -108,6 +128,16 @@ struct Pretty<Int<N>> {
     using type = typename pretty_detail::IntString<N>::type;
 };
 
+template<auto Storage>
+struct Pretty<BigInt<Storage>> {
+    using type = typename pretty_detail::BigIntString<Storage>::type;
+};
+
+template<typename Num, typename Den>
+struct Pretty<Rational<Num, Den>> {
+    using type = pretty_detail::StringCatMany_t<Pretty_t<Num>, String<'/'>, Pretty_t<Den>>;
+};
+
 template<>
 struct Pretty<Bool<true>> {
     using type = String<'t', 'r', 'u', 'e'>;
@@ -166,6 +196,16 @@ struct Pretty<Mul> {
 template<>
 struct Pretty<Div> {
     using type = String<'/'>;
+};
+
+template<>
+struct Pretty<Abs> {
+    using type = String<'a', 'b', 's'>;
+};
+
+template<>
+struct Pretty<IsZero> {
+    using type = String<'z', 'e', 'r', 'o', '?'>;
 };
 
 template<>
@@ -410,6 +450,16 @@ struct Pretty<IntType> {
 };
 
 template<>
+struct Pretty<BigIntType> {
+    using type = String<'B', 'i', 'g', 'I', 'n', 't'>;
+};
+
+template<>
+struct Pretty<RationalType> {
+    using type = String<'R', 'a', 't', 'i', 'o', 'n', 'a', 'l'>;
+};
+
+template<>
 struct Pretty<BoolType> {
     using type = String<'B', 'o', 'o', 'l'>;
 };
@@ -509,9 +559,9 @@ struct Pretty<SSymbol<Name>> {
     using type = Pretty_t<Symbol<Name>>;
 };
 
-template<int N>
-struct Pretty<SInt<N>> {
-    using type = Pretty_t<Int<N>>;
+template<typename Token>
+struct Pretty<SNumberLit<Token>> {
+    using type = Pretty_t<Symbol<Token>>;
 };
 
 template<char... Chars>

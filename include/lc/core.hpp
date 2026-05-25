@@ -1,8 +1,34 @@
 #pragma once
 
+#include <cstddef>
 #include <type_traits>
 
 namespace lc {
+
+template<std::size_t N>
+struct fixed_string {
+    char value[N];
+
+    constexpr fixed_string(const char (&input)[N]) : value{} {
+        for (std::size_t i = 0; i < N; ++i) {
+            value[i] = input[i];
+        }
+    }
+
+    constexpr bool operator==(const fixed_string&) const = default;
+
+    static constexpr std::size_t size = N - 1;
+};
+
+inline constexpr std::size_t bigint_capacity = 256;
+
+struct bigint_storage {
+    bool negative = false;
+    std::size_t size = 1;
+    char digits[bigint_capacity] = {'0'};
+
+    constexpr bool operator==(const bigint_storage&) const = default;
+};
 
 template<bool Cond, typename Then, typename Else>
 struct IfType {
@@ -78,9 +104,20 @@ struct Int {
     static constexpr int value = N;
 };
 
+template<auto Storage>
+struct BigInt {
+    inline static constexpr auto storage = Storage;
+};
+
 template<bool B>
 struct Bool {
     static constexpr bool value = B;
+};
+
+template<typename Numerator, typename Denominator>
+struct Rational {
+    using numerator = Numerator;
+    using denominator = Denominator;
 };
 
 template<char... Chars>
