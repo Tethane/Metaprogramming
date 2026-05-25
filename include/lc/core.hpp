@@ -2,8 +2,12 @@
 
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace lc {
+
+template<char... Chars>
+struct String;
 
 template<std::size_t N>
 struct fixed_string {
@@ -19,6 +23,20 @@ struct fixed_string {
 
     static constexpr std::size_t size = N - 1;
 };
+
+template<fixed_string Source, typename Seq>
+struct fixed_string_to_string_impl;
+
+template<fixed_string Source, std::size_t... Indices>
+struct fixed_string_to_string_impl<Source, std::index_sequence<Indices...>> {
+    using type = String<Source.value[Indices]...>;
+};
+
+template<fixed_string Source>
+using fixed_string_to_string_t = typename fixed_string_to_string_impl<
+    Source,
+    std::make_index_sequence<Source.size>
+>::type;
 
 inline constexpr std::size_t bigint_capacity = 256;
 inline constexpr std::size_t decimal_capacity = 128;

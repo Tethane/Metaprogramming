@@ -758,6 +758,68 @@ struct Pretty<RecursiveClosure<Name, ParamsT, Body, Env>> {
 };
 
 template<>
+struct Pretty<UnitType> {
+    using type = String<'(', ')'>;
+};
+
+template<typename From, typename To>
+struct Pretty<HFunctionType<From, To>> {
+    using type = pretty_detail::StringCatMany_t<String<'('>, Pretty_t<From>, String<' ', '-', '>', ' '>, Pretty_t<To>, String<')'>>;
+};
+
+template<typename... Items>
+struct Pretty<HTupleType<Items...>> {
+    using type = pretty_detail::StringCatMany_t<
+        String<'('>,
+        typename JoinPretty<String<',', ' '>, Items...>::type,
+        String<')'>
+    >;
+};
+
+template<typename Name>
+struct Pretty<HADTType<Name>> {
+    using type = Pretty_t<Name>;
+};
+
+template<typename Inner>
+struct Pretty<IOType<Inner>> {
+    using type = pretty_detail::StringCatMany_t<String<'I', 'O', ' '>, Pretty_t<Inner>>;
+};
+
+template<typename Expr, typename Env>
+struct Pretty<HThunk<Expr, Env>> {
+    using type = String<'#', '<', 't', 'h', 'u', 'n', 'k', '>'>;
+};
+
+template<typename Name, typename Expr, typename Env>
+struct Pretty<HRecursiveThunk<Name, Expr, Env>> {
+    using type = pretty_detail::StringCatMany_t<String<'#', '<', 'r', 'e', 'c', '-', 't', 'h', 'u', 'n', 'k', ' '>, Pretty_t<Name>, String<'>'>>;
+};
+
+template<typename ParamsT, typename Body, typename Env>
+struct Pretty<HClosure<ParamsT, Body, Env>> {
+    using type = pretty_detail::StringCatMany_t<String<'#', '<', 'h', '-', 'c', 'l', 'o', 's', 'u', 'r', 'e', ' '>, Pretty_t<ParamsT>, String<'>'>>;
+};
+
+template<typename Name, typename ParamsT, typename Body, typename Env>
+struct Pretty<HRecursiveClosure<Name, ParamsT, Body, Env>> {
+    using type = pretty_detail::StringCatMany_t<String<'#', '<', 'h', '-', 'r', 'e', 'c', '-', 'c', 'l', 'o', 's', 'u', 'r', 'e', ' '>, Pretty_t<Name>, String<' '>, Pretty_t<ParamsT>, String<'>'>>;
+};
+
+template<typename Value, typename OutputLog, typename NextSeed>
+struct Pretty<EffectResult<Value, OutputLog, NextSeed>> {
+    using type = pretty_detail::StringCatMany_t<
+        String<'#', '<', 'e', 'f', 'f', 'e', 'c', 't', ' '>,
+        Pretty_t<Value>,
+        String<' '>,
+        Pretty_t<OutputLog>,
+        String<' '>,
+        Pretty_t<NextSeed>,
+        String<'>'>
+    >;
+};
+
+template<>
 struct Pretty<NatType> {
     using type = String<'N', 'a', 't'>;
 };

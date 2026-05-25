@@ -25,6 +25,16 @@ using ScriptVectorMathResult = lc::EvalScript_t<lc::generated_scripts::vector_ma
 using ScriptMatrixMathResult = lc::EvalScript_t<lc::generated_scripts::matrix_math_source>;
 using ScriptComplexMathResult = lc::EvalScript_t<lc::generated_scripts::complex_math_source>;
 using ScriptStatsMathResult = lc::EvalScript_t<lc::generated_scripts::stats_math_source>;
+using HaskellFactorialResult = lc::EvalHaskellScript_t<lc::generated_haskell_scripts::factorial_source>;
+using HaskellFactorialType = lc::TypeCheckHaskellScript_t<lc::generated_haskell_scripts::factorial_source>;
+using HaskellMaybeResult = lc::EvalHaskellScript_t<lc::generated_haskell_scripts::maybe_int_source>;
+using HaskellMaybeType = lc::TypeCheckHaskellScript_t<lc::generated_haskell_scripts::maybe_int_source>;
+using HaskellStreamResult = lc::EvalHaskellScript_t<lc::generated_haskell_scripts::stream_take_source>;
+using HaskellStreamType = lc::TypeCheckHaskellScript_t<lc::generated_haskell_scripts::stream_take_source>;
+using HaskellIoRun = lc::RunHaskellScript_t<lc::generated_haskell_scripts::io_demo_source, 0>;
+using HaskellIoType = lc::TypeCheckHaskellScript_t<lc::generated_haskell_scripts::io_demo_source>;
+using HaskellWhereResult = lc::EvalHaskellSource_t<"main :: Int; main = let { y = 20 + 22 } in y;">;
+using HaskellLambdaResult = lc::EvalHaskellSource_t<"main :: Int; main = (\\x -> x + 1) 41;">;
 using DotStats = lc::NormalizeWithStats_t<lc::Apply_t<lc::Dot, lc::VectorExampleA, lc::VectorExampleB>>;
 using MatrixStats = lc::NormalizeWithStats_t<lc::Apply_t<lc::MatMul, lc::MatrixExampleA, lc::MatrixExampleB>>;
 
@@ -50,6 +60,7 @@ int run_demo() {
     constexpr auto primes = lc::to_array_v<lc::PrimesUpTo50>;
     constexpr auto two_sum = lc::to_array_v<lc::TwoSumExample>;
     constexpr auto three_sum = lc::to_matrix_v<lc::ThreeSumExample>;
+    constexpr auto haskell_stream = lc::to_array_v<HaskellStreamResult>;
 
     std::cout << "primes up to 50: ";
     print_int_array(primes);
@@ -99,6 +110,19 @@ int run_demo() {
     std::cout << "matrix stats: reductions=" << lc::reduction_count_v<MatrixStats>
               << " nodes=" << lc::node_count_v<MatrixStats> << "\n";
     std::cout << "core lambda identity pretty: " << lc::pretty_string_view_v<lc::I> << "\n";
+    std::cout << "haskell factorial: " << lc::to_int_v<HaskellFactorialResult>
+              << " : " << lc::pretty_string_view_v<HaskellFactorialType> << "\n";
+    std::cout << "haskell maybe pattern match: " << lc::to_int_v<HaskellMaybeResult>
+              << " : " << lc::pretty_string_view_v<HaskellMaybeType> << "\n";
+    std::cout << "haskell lazy stream prefix: ";
+    print_int_array(haskell_stream);
+    std::cout << " : " << lc::pretty_string_view_v<HaskellStreamType> << "\n";
+    std::cout << "haskell let result: " << lc::to_int_v<HaskellWhereResult> << "\n";
+    std::cout << "haskell lambda result: " << lc::to_int_v<HaskellLambdaResult> << "\n";
+    std::cout << "haskell io type: " << lc::pretty_string_view_v<HaskellIoType> << "\n";
+    std::cout << "haskell io output: " << lc::to_output_string_view_v<HaskellIoRun>;
+    std::cout << "haskell io value: " << lc::to_string_view_v<lc::to_effect_value_t<HaskellIoRun>> << "\n";
+    std::cout << "haskell io next seed: " << lc::to_seed_v<HaskellIoRun> << "\n";
 
     return 0;
 }

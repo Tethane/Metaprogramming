@@ -226,4 +226,35 @@ inline constexpr int node_count_v = Stats::nodes;
 template<typename Stats>
 inline constexpr int approximation_count_v = Stats::approximations;
 
+template<typename Result>
+struct to_effect_value;
+
+template<typename Value, typename OutputLog, typename NextSeed>
+struct to_effect_value<EffectResult<Value, OutputLog, NextSeed>> {
+    using type = Value;
+};
+
+template<typename Result>
+using to_effect_value_t = typename to_effect_value<Result>::type;
+
+template<typename Result>
+struct to_output_string_view;
+
+template<typename Value, typename OutputLog, typename NextSeed>
+struct to_output_string_view<EffectResult<Value, OutputLog, NextSeed>> {
+    inline static constexpr std::string_view value = to_string_view<OutputLog>::value;
+};
+
+template<typename Result>
+inline constexpr std::string_view to_output_string_view_v = to_output_string_view<Result>::value;
+
+template<typename Result>
+struct to_seed;
+
+template<typename Value, typename OutputLog, int Seed>
+struct to_seed<EffectResult<Value, OutputLog, Int<Seed>>> : Int<Seed> {};
+
+template<typename Result>
+inline constexpr int to_seed_v = to_seed<Result>::value;
+
 } // namespace lc

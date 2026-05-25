@@ -2,7 +2,7 @@
 
 This repository is an experiment in treating the C++ type system as a computation engine.
 
-At the center of the project is a small lambda-calculus evaluator built with templates. On top of that core, the library adds pragmatic intrinsic values, a typed Lisp-like front-end, a compile-time reader, a reader-macro expansion stage, local type inference, pretty-printers, an exact-and-symbolic math subsystem, and a standard library of algorithms and data operations. The result is a header-only C++20 system that can reduce lambda terms, expand Lisp-like source, evaluate higher-level functional programs, approximate symbolic math when requested, and materialize useful results entirely at compile time.
+At the center of the project is a small lambda-calculus evaluator built with templates. On top of that core, the library adds pragmatic intrinsic values, a typed Lisp-like front-end, a compile-time Haskell front-end, compile-time readers, macro/desugaring stages, local type inference, pretty-printers, an exact-and-symbolic math subsystem, and a standard library of algorithms and data operations. The result is a header-only C++20 system that can reduce lambda terms, expand source code from two different functional surface languages, evaluate higher-level programs, approximate symbolic math when requested, and materialize useful results entirely at compile time.
 
 ## What Lambda Calculus Is
 
@@ -61,12 +61,14 @@ The core ideas are:
 - normal-order reduction still matters
 - De Bruijn indexing keeps binding precise
 - compact intrinsic values make nontrivial compile-time programs feasible
-- a Lisp-like surface makes the system easier to interact with
+- a Lisp-like surface makes the system easy to explore
+- a Haskell-like surface tests how far the engine can support typed, higher-level functional programming
 
 So this is both:
 
 - a lambda-calculus playground
 - a serious metaprogramming experiment in abstract computation
+- a two-front-end compile-time language lab
 
 ## What The Library Contains
 
@@ -94,6 +96,9 @@ So this is both:
 - A typed Lisp-like AST with environments, closures, top-level program forms, and typechecking
 - A compile-time reader from source strings to Lisp AST, plus staged source expansion
 - Reader-level syntactic forms such as `define`, `cond`, and `list`
+- A compile-time Haskell AST with typed declarations, function bindings, pattern syntax, and effect result wrappers
+- A Haskell reader/desugaring layer for `.hs` scripts and inline source snippets
+- A deterministic compile-time effect model with output accumulation, seeded randomness, and generated-resource reads
 - Local bidirectional-style inference through `InferType`
 - Pretty-printers for values, types, lambda terms, Lisp forms, and errors
 - Explicit approximation and metric surfaces such as `Approx_t<T, Digits>`, `ReadScriptApprox_t<...>`, and `NormalizeWithStats_t<...>`
@@ -105,29 +110,33 @@ So this is both:
 
 ```mermaid
 flowchart TD
-    A[Source String / Script File<br/>ReadSource_t ReadScript_t] --> B[Reader Layer<br/>reader.hpp]
-    B --> C[S-Expression AST<br/>SSymbol SList SInt SStringLit SProgram]
-    C --> X[Expansion Stage<br/>ExpandSource_t]
-    X --> D[Lisp Front-End<br/>lisp.hpp]
-    D --> E[Typechecker<br/>TypeCheck_t]
-    D --> F[Evaluator<br/>EvalLisp_t]
-    F --> G[Core Lambda / Hybrid Terms<br/>core.hpp]
-    G --> H[Reducer<br/>eval.hpp]
-    H --> I[Primitive Intrinsics<br/>intrinsics.hpp]
-    I --> J[Normalized Compile-Time Values<br/>Nat Int BigInt Rational Decimal Bool RealExpr Complex Vector Matrix String List Set AssocMap]
-    I --> MATH[Math Subsystem<br/>Trig Exp Log Linear Algebra Statistics]
-    MATH --> J
-    J --> K[Pretty Printers<br/>pretty.hpp]
-    J --> L[Runtime Bridge<br/>runtime.hpp]
-    J --> AP[Approximation Layer<br/>Approx_t ReadScriptApprox_t]
-    M[Named Surface Syntax<br/>var lam app free] --> G
-    N[Standard Library<br/>std.hpp] --> D
-    N --> G
-    N --> I
-    S[scripts/*.lisp<br/>generated/lc/*.hpp] --> A
-    L --> O[main.cpp Demo Output]
-    K --> O
-    AP --> O
+    A[Source Strings / Script Files] --> B[Lisp Reader<br/>reader.hpp]
+    A --> C[Haskell Reader<br/>haskell_reader.hpp]
+    B --> D[Lisp Expansion Stage<br/>ExpandSource_t]
+    D --> E[Lisp Front-End<br/>lisp.hpp]
+    C --> F[Haskell Front-End<br/>haskell.hpp]
+    E --> G[Lisp Typecheck / Eval]
+    F --> H[Haskell Typecheck / Eval / Run]
+    H --> IO[Effect Runtime<br/>EffectResult Output Seed Resource Reads]
+    G --> I[Core Lambda / Hybrid Terms<br/>core.hpp]
+    H --> I
+    I --> J[Reducer<br/>eval.hpp]
+    J --> K[Primitive Intrinsics<br/>intrinsics.hpp]
+    K --> L[Normalized Compile-Time Values<br/>Nat Int BigInt Rational Decimal Bool String List Set AssocMap RealExpr Complex Vector Matrix]
+    K --> M[Math Subsystem<br/>Trig Exp Log Linear Algebra Statistics]
+    M --> L
+    N[Named Surface Syntax<br/>var lam app free] --> I
+    O[Standard Library<br/>std.hpp] --> E
+    O --> F
+    O --> K
+    P[scripts/*.lisp and scripts/*.hs<br/>generated/lc/*.hpp] --> A
+    L --> Q[Pretty Printers<br/>pretty.hpp]
+    L --> R[Runtime Bridge<br/>runtime.hpp]
+    L --> S[Approximation / Metrics<br/>Approx_t NormalizeWithStats_t]
+    Q --> T[demo/demo.cpp]
+    R --> T
+    S --> T
+    IO --> T
 ```
 
 ## Layer By Layer
@@ -232,6 +241,57 @@ using Expanded = lc::ExpandSource_t<"(list 1 2 3)">;
 static_assert(lc::pretty_string_view_v<Expanded> == "(cons 1 (cons 2 (cons 3 '())))");
 ```
 
+### 5. Haskell front-end
+
+The repository now also has a second surface language in [include/lc/haskell.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/haskell.hpp) and [include/lc/haskell_reader.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/haskell_reader.hpp).
+
+The Haskell side is intentionally constrained, but it already exercises a different part of the design space:
+
+- typed top-level bindings
+- explicit type signatures
+- lambda/application syntax
+- `if`
+- `let`
+- `case`
+- algebraic data declarations
+- simple pattern matching
+- effectful `do`-style programs through a deterministic compile-time runtime
+
+Public entrypoints include:
+
+- `ReadHaskellSource_t`
+- `TypeCheckHaskellSource_t`
+- `EvalHaskellSource_t`
+- `ExpandHaskellSource_t`
+- `ReadHaskellScript_t`
+- `TypeCheckHaskellScript_t`
+- `EvalHaskellScript_t`
+- `RunHaskellScript_t`
+
+The key point is that Haskell is not a separate engine. It is a second frontend that lowers onto the same intrinsic/value/evaluation substrate used by the Lisp layer.
+
+### 6. Compile-time effects
+
+The Haskell layer introduces a deliberately constrained effect model. The goal is not to give templates arbitrary host power. The goal is to make side effects explicit, typed, deterministic, and safe to evaluate at compile time.
+
+The current effect surface provides:
+
+- writer-style output accumulation via `putStr` and `putStrLn`
+- deterministic pseudo-randomness via `randomInt` and `randomNat`
+- generated-resource reads via `readScript`
+
+Effectful execution returns:
+
+- `EffectResult<Value, OutputLog, NextSeed>`
+
+and can be observed with runtime helpers such as:
+
+- `to_effect_value_t<T>`
+- `to_output_string_view_v<T>`
+- `to_seed_v<T>`
+
+There is no arbitrary filesystem access, network access, wall-clock time, environment-variable access, or host I/O from inside compile-time Haskell programs.
+
 ### 5. Pretty-printing and runtime bridge
 
 Because type-level systems are hard to inspect, the library includes:
@@ -261,10 +321,13 @@ include/lc/intrinsics.hpp Intrinsic values and primitive reductions
 include/lc/eval.hpp       Shift, substitution, stepping, normalization
 include/lc/lisp.hpp       Lisp AST, closures, environments, typechecking
 include/lc/reader.hpp     Compile-time reader, top-level forms, and source expansion
+include/lc/haskell.hpp    Haskell AST, effect runtime, and typed frontend
+include/lc/haskell_reader.hpp Haskell source/script reader and desugaring
 include/lc/pretty.hpp     Pretty-printers for terms, values, types, and errors
 include/lc/std.hpp        Standard library and example programs
 include/lc/runtime.hpp    Runtime bridge for compile-time values
 scripts/*.lisp            Script-backed Lisp examples
+scripts/*.hs              Script-backed Haskell examples
 generated/lc/*.hpp        Generated compile-time source headers
 demo/demo.cpp             Demo runner and printing layer
 main.cpp                  Demo program
@@ -446,6 +509,34 @@ static_assert(IsSame<EvalLisp_t<Program>, Int<22>>::value);
 static_assert(IsSame<TypeCheck_t<Program>, IntType>::value);
 ```
 
+### Compile-time Haskell example
+
+```cpp
+#include "lambda.hpp"
+
+using namespace lc;
+
+using Result = EvalHaskellSource_t<
+    "main :: Int; main = (\\\\x -> x + 1) 41;"
+>;
+
+static_assert(IsSame<Result, Int<42>>::value);
+```
+
+### Compile-time Haskell effects
+
+```cpp
+#include "lambda.hpp"
+
+using namespace lc;
+
+using Run = RunHaskellScript_t<generated_haskell_scripts::io_demo_source, 0>;
+
+static_assert(pretty_string_view_v<TypeCheckHaskellScript_t<generated_haskell_scripts::io_demo_source>> == "IO String");
+static_assert(to_output_string_view_v<Run> == "begin\n");
+static_assert(to_seed_v<Run> == 12345);
+```
+
 ### Reader features
 
 ```cpp
@@ -565,7 +656,7 @@ It is slower, but excellent for debugging nontermination.
 
 ## Demo Program
 
-The demo in [main.cpp](/home/ethan/dev/fun/metaprogramming/main.cpp) shows that the library is not just evaluating toy combinators. It computes:
+The demo entrypoint in [main.cpp](/home/ethan/dev/fun/metaprogramming/main.cpp) delegates to [demo/demo.cpp](/home/ethan/dev/fun/metaprogramming/demo/demo.cpp). It shows that the library is not just evaluating toy combinators. It computes:
 
 - a compile-time sieve of Eratosthenes
 - two-sum
@@ -577,6 +668,10 @@ The demo in [main.cpp](/home/ethan/dev/fun/metaprogramming/main.cpp) shows that 
 - reader-driven source programs
 - source expansion and local inference
 - pretty-printed parse errors
+- compile-time Haskell factorial
+- Haskell algebraic data + pattern matching
+- Haskell lazy stream prefix extraction
+- deterministic compile-time Haskell effects
 
 Typical output:
 
@@ -596,6 +691,11 @@ reader list expansion: (cons 1 (cons 2 (cons 3 '())))
 reader cond expansion: (if true 1 2)
 reader recursive value define error: #<eval-error recursive-value-define>
 reader parse error pretty: #<reader-error unterminated-list>
+haskell factorial: 120 : Int
+haskell maybe pattern match: 42 : Int
+haskell lazy stream prefix: [1, 1, 1, 1, 1] : [Int]
+haskell io output: begin
+haskell io next seed: 12345
 ```
 
 ## Build And Run
@@ -642,6 +742,9 @@ The tests cover:
 - local inference behavior
 - reader behavior
 - parse errors
+- Haskell script parsing/evaluation entrypoints
+- Haskell script typing
+- deterministic Haskell effect execution
 - fuel exhaustion and cycle detection
 - larger example programs like sieve and interview-style algorithms
 
@@ -675,6 +778,8 @@ What it bends for practicality:
 
 That compromise is the whole point. It lets the repository explore abstract computation without giving up the ability to run interesting programs at compile time.
 
+The new Haskell frontend extends that compromise rather than replacing it. Lisp remains the more flexible exploratory frontend. Haskell is the more typed, effect-aware, and surface-language-rich frontend. Both are guests of the same underlying engine.
+
 ## Where To Start Reading
 
 If you want to understand the codebase from the inside out, a good reading order is:
@@ -684,8 +789,10 @@ If you want to understand the codebase from the inside out, a good reading order
 3. [include/lc/intrinsics.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/intrinsics.hpp)
 4. [include/lc/lisp.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/lisp.hpp)
 5. [include/lc/reader.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/reader.hpp)
-6. [include/lc/std.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/std.hpp)
-7. [tests.cpp](/home/ethan/dev/fun/metaprogramming/tests.cpp)
+6. [include/lc/haskell.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/haskell.hpp)
+7. [include/lc/haskell_reader.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/haskell_reader.hpp)
+8. [include/lc/std.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/std.hpp)
+9. [tests.cpp](/home/ethan/dev/fun/metaprogramming/tests.cpp)
 
 If you want to understand it from the outside in, start with:
 
@@ -695,12 +802,15 @@ If you want to understand it from the outside in, start with:
 
 ## Future Direction
 
-The current library is already close to a tiny compile-time Lisp environment, but there is plenty of room to grow:
+The current library is already close to a tiny compile-time Lisp and Haskell environment, but there is plenty of room to grow:
 
 - more reader forms beyond the current `define`, `cond`, and `list`
 - a richer top-level environment and prelude
 - stronger inference beyond the current local monomorphic model
 - user-defined macros or hygienic staged transforms
+- a more complete Haskell parser instead of the current constrained/example-driven reader surface
+- broader lazy-evaluation support with stronger sharing guarantees
+- richer compile-time effect vocabulary and resource modeling
 - more aggressive reduction optimizations
 - better diagnostics for deeply nested compile-time failures
 

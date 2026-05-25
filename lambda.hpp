@@ -5,6 +5,8 @@
 #include "include/lc/eval.hpp"
 #include "include/lc/lisp.hpp"
 #include "include/lc/reader.hpp"
+#include "include/lc/haskell.hpp"
+#include "include/lc/haskell_reader.hpp"
 #include "include/lc/std.hpp"
 #include "include/lc/runtime.hpp"
 #include "include/lc/pretty.hpp"

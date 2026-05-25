@@ -1,0 +1,1 @@
+data Stream = Cons Int Stream; takeN :: Int -> Stream -> [Int]; takeN n s = if n == 0 then [] else case s of { Cons x xs -> x : takeN (n - 1) xs }; ones :: Stream; ones = Cons 1 ones; main :: [Int]; main = takeN 5 ones;
