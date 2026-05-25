@@ -76,6 +76,30 @@ using MaxSubarrayExample = Normalize_t<Apply_t<MaxSubarraySum, MaxSubarrayInput>
 using ThreeSumInput = List<NegFour, NegOne, NegOne, Int<0>, Int<1>, Int<2>>;
 using ThreeSumExample = Normalize_t<Apply_t<ThreeSum, ThreeSumInput>>;
 
+using LambdaString = String<'l', 'a', 'm', 'b', 'd', 'a'>;
+using CalculusString = String<' ', 'c', 'a', 'l', 'c', 'u', 'l', 'u', 's'>;
+using LambdaCalculusString = Normalize_t<Apply_t<StringConcat, LambdaString, CalculusString>>;
+using LambdaCalculusLength = Normalize_t<Apply_t<StringLength, LambdaCalculusString>>;
+using LambdaPrefix = Normalize_t<Apply_t<StringTake, Six, LambdaCalculusString>>;
+using CalculusSuffix = Normalize_t<Apply_t<StringDrop, Seven, LambdaCalculusString>>;
+using StringContainsCalc = Normalize_t<Apply_t<StringContains, LambdaCalculusString, String<'c', 'a', 'l', 'c'>>>;
+using StringStartsWithLambda = Normalize_t<Apply_t<StringStartsWith, LambdaCalculusString, LambdaString>>;
+
+using OddSet = Set<One, Three, Five>;
+using MixedSet = Set<Three, Four, Five>;
+using UnionSetExample = Normalize_t<Apply_t<SetUnion, OddSet, MixedSet>>;
+using IntersectionSetExample = Normalize_t<Apply_t<SetIntersection, OddSet, MixedSet>>;
+using SetContainsFourExample = Normalize_t<Apply_t<SetContains, UnionSetExample, Four>>;
+using SetSizeExample = Normalize_t<Apply_t<SetSize, UnionSetExample>>;
+
+using KeyAnswer = String<'a', 'n', 's', 'w', 'e', 'r'>;
+using KeyLucky = String<'l', 'u', 'c', 'k', 'y'>;
+using ExampleMapBase = Normalize_t<Apply_t<MapInsert, AssocMap<>, KeyAnswer, Int<42>>>;
+using ExampleMap = Normalize_t<Apply_t<MapInsert, ExampleMapBase, KeyLucky, Seven>>;
+using MapLookupAnswer = Normalize_t<Apply_t<MapFind, ExampleMap, KeyAnswer>>;
+using MapContainsLucky = Normalize_t<Apply_t<MapContainsKey, ExampleMap, KeyLucky>>;
+using MapSizeExample = Normalize_t<Apply_t<MapSize, ExampleMap>>;
+
 namespace church {
 
 using True = Lambda<Lambda<Var<1>>>;

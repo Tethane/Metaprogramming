@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <string_view>
 
 #include "std.hpp"
 
@@ -28,6 +29,18 @@ template<typename Term>
 inline constexpr bool to_bool_v = to_bool<Term>::value;
 
 template<typename Term>
+struct to_string_view;
+
+template<char... Chars>
+struct to_string_view<String<Chars...>> {
+    inline static constexpr char storage[sizeof...(Chars) + 1] = {Chars..., '\0'};
+    inline static constexpr std::string_view value{storage, sizeof...(Chars)};
+};
+
+template<typename Term>
+inline constexpr std::string_view to_string_view_v = to_string_view<Term>::value;
+
+template<typename Term>
 struct to_array;
 
 template<int... Ns>
@@ -37,6 +50,16 @@ struct to_array<List<Nat<Ns>...>> {
 
 template<int... Ns>
 struct to_array<List<Int<Ns>...>> {
+    static constexpr std::array<int, sizeof...(Ns)> value = {Ns...};
+};
+
+template<int... Ns>
+struct to_array<Set<Nat<Ns>...>> {
+    static constexpr std::array<int, sizeof...(Ns)> value = {Ns...};
+};
+
+template<int... Ns>
+struct to_array<Set<Int<Ns>...>> {
     static constexpr std::array<int, sizeof...(Ns)> value = {Ns...};
 };
 

@@ -83,8 +83,25 @@ struct Bool {
     static constexpr bool value = B;
 };
 
+template<char... Chars>
+struct String {};
+
 template<typename... Ts>
 struct List {};
+
+template<typename... Ts>
+struct Set {};
+
+template<typename Key, typename Value>
+struct Entry {
+    using key = Key;
+    using value = Value;
+};
+
+template<typename... Entries>
+struct AssocMap {};
+
+struct None {};
 
 template<typename... Terms>
 struct Apply;

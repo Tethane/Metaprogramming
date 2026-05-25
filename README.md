@@ -8,7 +8,7 @@ At its core, it has:
 - capture-avoiding shift and substitution
 - a normal-order reducer with bounded fuel
 - an opt-in checked normalizer for exact cycle detection
-- a hybrid standard library with intrinsic naturals, signed integers, booleans, and lists for practical compile-time performance
+- a hybrid standard library with intrinsic naturals, signed integers, booleans, strings, sets, maps, and lists for practical compile-time performance
 
 The result is a small compile-time language runtime built with templates. It still reduces programs by type substitution and application, but it avoids the worst Church-encoding blowups for arithmetic and collection-heavy code.
 
@@ -17,7 +17,7 @@ The result is a small compile-time language runtime built with templates. It sti
 Pure lambda-calculus encodings are elegant, but they get expensive very quickly in C++ template metaprogramming. This project takes a pragmatic approach:
 
 - lambda terms, substitution, and beta reduction remain the computational foundation
-- performance-critical values use compact intrinsic forms like `Nat<5>`, `Int<-3>`, `Bool<true>`, and `List<...>`
+- performance-critical values use compact intrinsic forms like `Nat<5>`, `Int<-3>`, `String<'o', 'k'>`, `Set<...>`, `AssocMap<...>`, `Bool<true>`, and `List<...>`
 - primitive operations such as `Add`, `Map`, `Filter`, and `Range` reduce directly when their arguments are intrinsic values
 
 That gives you something that still feels like a tiny lambda-calculus computer, but can also run more interesting compile-time programs.
@@ -33,6 +33,9 @@ That gives you something that still feels like a tiny lambda-calculus computer, 
   - combinators: `I`, `K`, `KI`, `S`, `B`, `C`, `W`, `Y`
   - booleans: `True`, `False`, `If`, `Not`, `And`, `Or`
   - numbers: `Nat<N>`, `Int<N>`, `Zero` through `Twelve`, `NegOne` through `NegFive`, `Succ`, `Pred`, `Add`, `Sub`, `Mul`, `Div`, `Mod`, `Pow`, `Eq`, `Lt`, `Lte`, `Gt`, `Gte`, `IsZero`
+  - strings: `String<...>`, `StringConcat`, `StringLength`, `StringEq`, `StringContains`, `StringStartsWith`, `StringTake`, `StringDrop`
+  - sets: `Set<...>`, `SetInsert`, `SetContains`, `SetErase`, `SetUnion`, `SetIntersection`, `SetSize`
+  - maps: `AssocMap<...>`, `Entry<K, V>`, `MapInsert`, `MapFind`, `MapContainsKey`, `MapErase`, `MapSize`
   - lists: `Nil`, `Cons`, `Head`, `Tail`, `IsEmpty`, `Concat`, `Reverse`, `Length`, `Range`, `Map`, `Filter`, `Foldl`, `Foldr`, `Sum`, `Product`, `Any`, `All`
 - Example algorithms: `Sieve`, `TwoSum`, `MaxSubarraySum`, `ThreeSum`
 - Legacy pure encodings preserved under `lc::church`
@@ -82,6 +85,13 @@ sum: 328
 two-sum indices for [2, 7, 11, 15], target 9: [0, 1]
 maximum subarray sum for [-2, 1, -3, 4, -1, 2, 1, -5, 4]: 6
 three-sum triplets for [-4, -1, -1, 0, 1, 2]: [[-1, -1, 2], [-1, 0, 1]]
+string concat example: lambda calculus
+string prefix (take 6): lambda
+string contains "calc": true
+set union of {1, 3, 5} and {3, 4, 5}: [1, 3, 5, 4]
+set contains 4: true
+map lookup "answer": 42
+map contains "lucky": true
 ```
 
 The relevant aliases live in [include/lc/std.hpp](/home/ethan/dev/fun/metaprogramming/include/lc/std.hpp):
@@ -175,6 +185,33 @@ static_assert(IsSame<
 >::value);
 ```
 
+### 6. Strings, sets, and maps
+
+```cpp
+#include "lambda.hpp"
+
+using namespace lc;
+
+using Greeting = Normalize_t<
+    Apply_t<StringConcat, String<'l', 'a', 'm', 'b', 'd', 'a'>, String<' ', 'r', 'u', 'n', 't', 'i', 'm', 'e'>>
+>;
+
+static_assert(IsSame<Greeting, String<'l', 'a', 'm', 'b', 'd', 'a', ' ', 'r', 'u', 'n', 't', 'i', 'm', 'e'>>::value);
+static_assert(IsSame<Normalize_t<Apply_t<StringContains, Greeting, String<'r', 'u', 'n'>>>, True>::value);
+
+using ExampleSet = Normalize_t<Apply_t<SetUnion, Set<One, Three>, Set<Three, Four>>>;
+static_assert(IsSame<ExampleSet, Set<One, Three, Four>>::value);
+
+using ExampleMap =
+    Normalize_t<Apply_t<MapInsert,
+        Normalize_t<Apply_t<MapInsert, AssocMap<>, String<'x'>, Int<10>>>,
+        String<'y'>,
+        Int<20>
+    >>;
+
+static_assert(IsSame<Normalize_t<Apply_t<MapFind, ExampleMap, String<'x'>>>, Int<10>>::value);
+```
+
 ## Core Mental Model
 
 There are three layers to keep in mind:
@@ -198,7 +235,10 @@ These are compact data forms that make the system practical:
 - `Nat<N>`
 - `Int<N>`
 - `Bool<B>`
+- `String<Chars...>`
 - `List<Ts...>`
+- `Set<Ts...>`
+- `AssocMap<Entries...>`
 
 They are still manipulated by the evaluator, but they avoid the AST explosion of large Church-encoded data.
 
@@ -251,7 +291,9 @@ The library includes a small bridge for moving useful compile-time results into 
 to_int_v<Nat<42>>
 to_int_v<Int<-7>>
 to_bool_v<Bool<true>>
+to_string_view_v<String<'o', 'k'>>
 to_array_v<List<Nat<1>, Nat<2>, Nat<3>>>
+to_array_v<Set<Nat<1>, Nat<3>, Nat<5>>>
 to_matrix_v<List<List<Int<-1>, Int<0>, Int<1>>>>
 ```
 

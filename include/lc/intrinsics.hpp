@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 #include "core.hpp"
 
 namespace lc {
@@ -44,6 +46,24 @@ struct Sieve {};
 struct TwoSum {};
 struct MaxSubarraySum {};
 struct ThreeSum {};
+struct StringConcat {};
+struct StringLength {};
+struct StringEq {};
+struct StringContains {};
+struct StringStartsWith {};
+struct StringTake {};
+struct StringDrop {};
+struct SetInsert {};
+struct SetContains {};
+struct SetErase {};
+struct SetUnion {};
+struct SetIntersection {};
+struct SetSize {};
+struct MapInsert {};
+struct MapContainsKey {};
+struct MapFind {};
+struct MapErase {};
+struct MapSize {};
 
 namespace detail {
 
@@ -66,6 +86,279 @@ struct ValueOf<Int<N>> : Int<N> {};
 
 template<typename T>
 inline constexpr int value_of_v = ValueOf<T>::value;
+
+template<std::size_t N, std::size_t M>
+constexpr bool string_starts_with_chars(const char (&text)[N], const char (&prefix)[M]) {
+    if constexpr (M == 1) {
+        return true;
+    } else if constexpr (N < M) {
+        return false;
+    } else {
+        for (std::size_t i = 0; i < M - 1; ++i) {
+            if (text[i] != prefix[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+template<std::size_t N, std::size_t M>
+constexpr bool string_contains_chars(const char (&text)[N], const char (&needle)[M]) {
+    if constexpr (M == 1) {
+        return true;
+    } else if constexpr (N < M) {
+        return false;
+    } else {
+        for (std::size_t offset = 0; offset + (M - 1) <= (N - 1); ++offset) {
+            bool match = true;
+            for (std::size_t i = 0; i < M - 1; ++i) {
+                if (text[offset + i] != needle[i]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+template<typename StrT, typename AccT = String<>>
+struct StringReverseAcc;
+
+template<char... AccChars>
+struct StringReverseAcc<String<>, String<AccChars...>> {
+    using type = String<AccChars...>;
+};
+
+template<char First, char... Rest, char... AccChars>
+struct StringReverseAcc<String<First, Rest...>, String<AccChars...>> {
+    using type = typename StringReverseAcc<String<Rest...>, String<First, AccChars...>>::type;
+};
+
+template<typename StrT>
+using StringReverse_t = typename StringReverseAcc<StrT>::type;
+
+template<typename StrT, typename TailT>
+struct StringConcatT;
+
+template<char... Left, char... Right>
+struct StringConcatT<String<Left...>, String<Right...>> {
+    using type = String<Left..., Right...>;
+};
+
+template<typename Left, typename Right>
+using StringConcat_t = typename StringConcatT<Left, Right>::type;
+
+template<int Count, typename StrT, bool Done = (Count == 0)>
+struct StringTakeImpl;
+
+template<int Count, bool Done>
+struct StringTakeImpl<Count, String<>, Done> {
+    using type = String<>;
+};
+
+template<int Count, char First, char... Rest>
+struct StringTakeImpl<Count, String<First, Rest...>, true> {
+    using type = String<>;
+};
+
+template<int Count, char First, char... Rest>
+struct StringTakeImpl<Count, String<First, Rest...>, false> {
+    using type = StringConcat_t<String<First>, typename StringTakeImpl<Count - 1, String<Rest...>>::type>;
+};
+
+template<int Count, typename StrT>
+using StringTake_t = typename StringTakeImpl<Count, StrT>::type;
+
+template<int Count, typename StrT, bool Done = (Count == 0)>
+struct StringDropImpl;
+
+template<int Count, bool Done>
+struct StringDropImpl<Count, String<>, Done> {
+    using type = String<>;
+};
+
+template<int Count, char... Chars>
+struct StringDropImpl<Count, String<Chars...>, true> {
+    using type = String<Chars...>;
+};
+
+template<int Count, char First, char... Rest>
+struct StringDropImpl<Count, String<First, Rest...>, false> {
+    using type = typename StringDropImpl<Count - 1, String<Rest...>>::type;
+};
+
+template<int Count, typename StrT>
+using StringDrop_t = typename StringDropImpl<Count, StrT>::type;
+
+template<typename Item, typename SetT>
+struct SetHas;
+
+template<typename Item>
+struct SetHas<Item, Set<>> : std::false_type {};
+
+template<typename Item, typename Head, typename... Tail>
+struct SetHas<Item, Set<Head, Tail...>>
+    : std::bool_constant<IsSame<Item, Head>::value || SetHas<Item, Set<Tail...>>::value> {};
+
+template<typename Item, typename SetT>
+struct SetInsertT;
+
+template<typename Item, typename... Items>
+struct SetInsertT<Item, Set<Items...>> {
+    using type = IfType_t<SetHas<Item, Set<Items...>>::value, Set<Items...>, Set<Items..., Item>>;
+};
+
+template<typename Item, typename SetT>
+using SetInsert_t = typename SetInsertT<Item, SetT>::type;
+
+template<typename Item, typename SetT>
+struct SetPrependT;
+
+template<typename Item, typename... Items>
+struct SetPrependT<Item, Set<Items...>> {
+    using type = Set<Item, Items...>;
+};
+
+template<typename Item, typename SetT>
+using SetPrepend_t = typename SetPrependT<Item, SetT>::type;
+
+template<typename Item, typename SetT>
+struct SetEraseT;
+
+template<typename Item>
+struct SetEraseT<Item, Set<>> {
+    using type = Set<>;
+};
+
+template<typename Item, typename Head, typename... Tail>
+struct SetEraseT<Item, Set<Head, Tail...>> {
+private:
+    using tail = typename SetEraseT<Item, Set<Tail...>>::type;
+
+public:
+    using type = IfType_t<IsSame<Item, Head>::value, tail, SetPrepend_t<Head, tail>>;
+};
+
+template<typename Item, typename SetT>
+using SetErase_t = typename SetEraseT<Item, SetT>::type;
+
+template<typename LeftSet, typename RightSet>
+struct SetUnionT;
+
+template<typename... LeftItems>
+struct SetUnionT<Set<LeftItems...>, Set<>> {
+    using type = Set<LeftItems...>;
+};
+
+template<typename... LeftItems, typename Item, typename... Rest>
+struct SetUnionT<Set<LeftItems...>, Set<Item, Rest...>> {
+    using type = typename SetUnionT<SetInsert_t<Item, Set<LeftItems...>>, Set<Rest...>>::type;
+};
+
+template<typename LeftSet, typename RightSet>
+using SetUnion_t = typename SetUnionT<LeftSet, RightSet>::type;
+
+template<typename LeftSet, typename RightSet, typename Acc = Set<>>
+struct SetIntersectionAcc;
+
+template<typename RightSet, typename... AccItems>
+struct SetIntersectionAcc<Set<>, RightSet, Set<AccItems...>> {
+    using type = Set<AccItems...>;
+};
+
+template<typename Head, typename... Tail, typename RightSet, typename... AccItems>
+struct SetIntersectionAcc<Set<Head, Tail...>, RightSet, Set<AccItems...>> {
+private:
+    using next_acc = IfType_t<SetHas<Head, RightSet>::value, SetInsert_t<Head, Set<AccItems...>>, Set<AccItems...>>;
+
+public:
+    using type = typename SetIntersectionAcc<Set<Tail...>, RightSet, next_acc>::type;
+};
+
+template<typename LeftSet, typename RightSet>
+using SetIntersection_t = typename SetIntersectionAcc<LeftSet, RightSet>::type;
+
+template<typename Key, typename MapT>
+struct AssocFindT;
+
+template<typename Key>
+struct AssocFindT<Key, AssocMap<>> {
+    using type = None;
+};
+
+template<typename Key, typename Value, typename... Rest>
+struct AssocFindT<Key, AssocMap<Entry<Key, Value>, Rest...>> {
+    using type = Value;
+};
+
+template<typename Key, typename EntryT, typename... Rest>
+struct AssocFindT<Key, AssocMap<EntryT, Rest...>> {
+    using type = typename AssocFindT<Key, AssocMap<Rest...>>::type;
+};
+
+template<typename Key, typename MapT>
+using AssocFind_t = typename AssocFindT<Key, MapT>::type;
+
+template<typename Key, typename Value, typename MapT>
+struct AssocInsertT;
+
+template<typename Key, typename Value>
+struct AssocInsertT<Key, Value, AssocMap<>> {
+    using type = AssocMap<Entry<Key, Value>>;
+};
+
+template<typename Key, typename Value, typename ExistingValue, typename... Rest>
+struct AssocInsertT<Key, Value, AssocMap<Entry<Key, ExistingValue>, Rest...>> {
+    using type = AssocMap<Entry<Key, Value>, Rest...>;
+};
+
+template<typename Key, typename Value, typename EntryT, typename... Rest>
+struct AssocInsertT<Key, Value, AssocMap<EntryT, Rest...>> {
+private:
+    using tail = typename AssocInsertT<Key, Value, AssocMap<Rest...>>::type;
+
+public:
+    template<typename... TailEntries>
+    static AssocMap<EntryT, TailEntries...> rebuild(AssocMap<TailEntries...>);
+
+    using type = decltype(rebuild(tail{}));
+};
+
+template<typename Key, typename Value, typename MapT>
+using AssocInsert_t = typename AssocInsertT<Key, Value, MapT>::type;
+
+template<typename Key, typename MapT>
+struct AssocEraseT;
+
+template<typename Key>
+struct AssocEraseT<Key, AssocMap<>> {
+    using type = AssocMap<>;
+};
+
+template<typename Key, typename Value, typename... Rest>
+struct AssocEraseT<Key, AssocMap<Entry<Key, Value>, Rest...>> {
+    using type = AssocMap<Rest...>;
+};
+
+template<typename Key, typename EntryT, typename... Rest>
+struct AssocEraseT<Key, AssocMap<EntryT, Rest...>> {
+private:
+    using tail = typename AssocEraseT<Key, AssocMap<Rest...>>::type;
+
+public:
+    template<typename... TailEntries>
+    static AssocMap<EntryT, TailEntries...> rebuild(AssocMap<TailEntries...>);
+
+    using type = decltype(rebuild(tail{}));
+};
+
+template<typename Key, typename MapT>
+using AssocErase_t = typename AssocEraseT<Key, MapT>::type;
 
 template<typename T, typename ListT>
 struct ListPushFront;
@@ -664,6 +957,51 @@ struct IntrinsicStep<Call<IsZero, Int<N>>> {
     using type = ReductionResult<Bool<(N == 0)>, true>;
 };
 
+template<char... LeftChars, char... RightChars>
+struct IntrinsicStep<Call<StringConcat, String<LeftChars...>, String<RightChars...>>> {
+    using type = ReductionResult<String<LeftChars..., RightChars...>, true>;
+};
+
+template<char... Chars>
+struct IntrinsicStep<Call<StringLength, String<Chars...>>> {
+    using type = ReductionResult<Nat<static_cast<int>(sizeof...(Chars))>, true>;
+};
+
+template<char... LeftChars, char... RightChars>
+struct IntrinsicStep<Call<StringEq, String<LeftChars...>, String<RightChars...>>> {
+    using type = ReductionResult<Bool<IsSame<String<LeftChars...>, String<RightChars...>>::value>, true>;
+};
+
+template<char... TextChars, char... NeedleChars>
+struct IntrinsicStep<Call<StringContains, String<TextChars...>, String<NeedleChars...>>> {
+private:
+    inline static constexpr char text[] = {TextChars..., '\0'};
+    inline static constexpr char needle[] = {NeedleChars..., '\0'};
+
+public:
+    using type = ReductionResult<Bool<string_contains_chars(text, needle)>, true>;
+};
+
+template<char... TextChars, char... PrefixChars>
+struct IntrinsicStep<Call<StringStartsWith, String<TextChars...>, String<PrefixChars...>>> {
+private:
+    inline static constexpr char text[] = {TextChars..., '\0'};
+    inline static constexpr char prefix[] = {PrefixChars..., '\0'};
+
+public:
+    using type = ReductionResult<Bool<string_starts_with_chars(text, prefix)>, true>;
+};
+
+template<int Count, char... Chars>
+struct IntrinsicStep<Call<StringTake, Nat<Count>, String<Chars...>>> {
+    using type = ReductionResult<StringTake_t<Count, String<Chars...>>, true>;
+};
+
+template<int Count, char... Chars>
+struct IntrinsicStep<Call<StringDrop, Nat<Count>, String<Chars...>>> {
+    using type = ReductionResult<StringDrop_t<Count, String<Chars...>>, true>;
+};
+
 template<typename Item, typename... Items>
 struct IntrinsicStep<Call<Cons, Item, List<Items...>>> {
     using type = ReductionResult<List<Item, Items...>, true>;
@@ -709,6 +1047,11 @@ struct IntrinsicStep<Call<Length, List<Items...>>> {
     using type = ReductionResult<Nat<static_cast<int>(sizeof...(Items))>, true>;
 };
 
+template<char... Chars>
+struct IntrinsicStep<Call<Length, String<Chars...>>> {
+    using type = ReductionResult<Nat<static_cast<int>(sizeof...(Chars))>, true>;
+};
+
 template<int Begin, int End>
 struct IntrinsicStep<Call<Range, Nat<Begin>, Nat<End>>> {
     using type = ReductionResult<RangeList_t<Begin, End>, true>;
@@ -752,6 +1095,71 @@ struct IntrinsicStep<Call<Any, List<Items...>>> {
 template<typename... Items>
 struct IntrinsicStep<Call<All, List<Items...>>> {
     using type = ReductionResult<AllList_t<List<Items...>>, true>;
+};
+
+template<typename Item, typename... Items>
+struct IntrinsicStep<Call<SetContains, Set<Items...>, Item>> {
+    using type = ReductionResult<Bool<SetHas<Item, Set<Items...>>::value>, true>;
+};
+
+template<typename Item, typename... Items>
+struct IntrinsicStep<Call<SetInsert, Set<Items...>, Item>> {
+    using type = ReductionResult<SetInsert_t<Item, Set<Items...>>, true>;
+};
+
+template<typename Item, typename... Items>
+struct IntrinsicStep<Call<SetErase, Set<Items...>, Item>> {
+    using type = ReductionResult<SetErase_t<Item, Set<Items...>>, true>;
+};
+
+template<typename... LeftItems, typename... RightItems>
+struct IntrinsicStep<Call<SetUnion, Set<LeftItems...>, Set<RightItems...>>> {
+    using type = ReductionResult<SetUnion_t<Set<LeftItems...>, Set<RightItems...>>, true>;
+};
+
+template<typename... LeftItems, typename... RightItems>
+struct IntrinsicStep<Call<SetIntersection, Set<LeftItems...>, Set<RightItems...>>> {
+    using type = ReductionResult<SetIntersection_t<Set<LeftItems...>, Set<RightItems...>>, true>;
+};
+
+template<typename... Items>
+struct IntrinsicStep<Call<SetSize, Set<Items...>>> {
+    using type = ReductionResult<Nat<static_cast<int>(sizeof...(Items))>, true>;
+};
+
+template<typename... Items>
+struct IntrinsicStep<Call<Length, Set<Items...>>> {
+    using type = ReductionResult<Nat<static_cast<int>(sizeof...(Items))>, true>;
+};
+
+template<typename Key, typename Value, typename... Entries>
+struct IntrinsicStep<Call<MapInsert, AssocMap<Entries...>, Key, Value>> {
+    using type = ReductionResult<AssocInsert_t<Key, Value, AssocMap<Entries...>>, true>;
+};
+
+template<typename Key, typename... Entries>
+struct IntrinsicStep<Call<MapFind, AssocMap<Entries...>, Key>> {
+    using type = ReductionResult<AssocFind_t<Key, AssocMap<Entries...>>, true>;
+};
+
+template<typename Key, typename... Entries>
+struct IntrinsicStep<Call<MapContainsKey, AssocMap<Entries...>, Key>> {
+    using type = ReductionResult<Bool<!IsSame<AssocFind_t<Key, AssocMap<Entries...>>, None>::value>, true>;
+};
+
+template<typename Key, typename... Entries>
+struct IntrinsicStep<Call<MapErase, AssocMap<Entries...>, Key>> {
+    using type = ReductionResult<AssocErase_t<Key, AssocMap<Entries...>>, true>;
+};
+
+template<typename... Entries>
+struct IntrinsicStep<Call<MapSize, AssocMap<Entries...>>> {
+    using type = ReductionResult<Nat<static_cast<int>(sizeof...(Entries))>, true>;
+};
+
+template<typename... Entries>
+struct IntrinsicStep<Call<Length, AssocMap<Entries...>>> {
+    using type = ReductionResult<Nat<static_cast<int>(sizeof...(Entries))>, true>;
 };
 
 template<typename... Items>
