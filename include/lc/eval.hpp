@@ -241,4 +241,80 @@ struct NormalizeChecked<Term, 0, Seen> {
     using type = OutOfFuel<Canonicalize_t<Term>>;
 };
 
+template<typename... Terms>
+struct TermNodeCountSum : std::integral_constant<int, (0 + ... + Terms::value)> {};
+
+template<typename Term>
+struct TermNodeCount : std::integral_constant<int, 1> {};
+
+template<typename Body>
+struct TermNodeCount<Lambda<Body>> : std::integral_constant<int, 1 + TermNodeCount<Body>::value> {};
+
+template<typename F, typename A>
+struct TermNodeCount<App<F, A>> : std::integral_constant<int, 1 + TermNodeCount<F>::value + TermNodeCount<A>::value> {};
+
+template<typename Head, typename... Args>
+struct TermNodeCount<Call<Head, Args...>>
+    : std::integral_constant<int, 1 + TermNodeCount<Head>::value + (0 + ... + TermNodeCount<Args>::value)> {};
+
+template<typename Num, typename Den>
+struct TermNodeCount<Rational<Num, Den>> : std::integral_constant<int, 1 + TermNodeCount<Num>::value + TermNodeCount<Den>::value> {};
+
+template<typename Op, typename... Args>
+struct TermNodeCount<RealExpr<Op, Args...>>
+    : std::integral_constant<int, 1 + TermNodeCount<Op>::value + (0 + ... + TermNodeCount<Args>::value)> {};
+
+template<typename Real, typename Imag>
+struct TermNodeCount<Complex<Real, Imag>> : std::integral_constant<int, 1 + TermNodeCount<Real>::value + TermNodeCount<Imag>::value> {};
+
+template<typename... Elems>
+struct TermNodeCount<Vector<Elems...>> : std::integral_constant<int, 1 + (0 + ... + TermNodeCount<Elems>::value)> {};
+
+template<typename... Rows>
+struct TermNodeCount<Matrix<Rows...>> : std::integral_constant<int, 1 + (0 + ... + TermNodeCount<Rows>::value)> {};
+
+template<typename... Items>
+struct TermNodeCount<List<Items...>> : std::integral_constant<int, 1 + (0 + ... + TermNodeCount<Items>::value)> {};
+
+template<typename... Items>
+struct TermNodeCount<Set<Items...>> : std::integral_constant<int, 1 + (0 + ... + TermNodeCount<Items>::value)> {};
+
+template<typename Key, typename Value>
+struct TermNodeCount<Entry<Key, Value>> : std::integral_constant<int, 1 + TermNodeCount<Key>::value + TermNodeCount<Value>::value> {};
+
+template<typename... Entries>
+struct TermNodeCount<AssocMap<Entries...>> : std::integral_constant<int, 1 + (0 + ... + TermNodeCount<Entries>::value)> {};
+
+template<typename Stats>
+struct StatsAddReduction;
+
+template<typename Value, int Reductions, int Nodes, int Approximations>
+struct StatsAddReduction<ComputationStats<Value, Reductions, Nodes, Approximations>> {
+    using type = ComputationStats<Value, Reductions + 1, Nodes, Approximations>;
+};
+
+template<typename Stats>
+using StatsAddReduction_t = typename StatsAddReduction<Stats>::type;
+
+template<typename Term, int Fuel>
+struct NormalizeWithStats {
+private:
+    using current = Canonicalize_t<Term>;
+    using step = typename Step<current>::type;
+    using terminal = ComputationStats<current, 0, TermNodeCount<current>::value, 0>;
+    using recursive = StatsAddReduction_t<typename NormalizeWithStats<typename step::term, Fuel - 1>::type>;
+
+public:
+    using type = IfType_t<step::changed, recursive, terminal>;
+};
+
+template<typename Term>
+struct NormalizeWithStats<Term, 0> {
+private:
+    using current = Canonicalize_t<Term>;
+
+public:
+    using type = ComputationStats<OutOfFuel<current>, 0, TermNodeCount<current>::value, 0>;
+};
+
 } // namespace lc

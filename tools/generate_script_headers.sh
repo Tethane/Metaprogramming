@@ -17,8 +17,7 @@ shopt -s nullglob
 for script in "$src_dir"/*.lisp; do
     base="$(basename "$script" .lisp)"
     ident="${base//-/_}"
-    upper_ident="$(printf '%s' "$ident" | tr '[:lower:]' '[:upper:]')"
-    delimiter="LCS_${upper_ident}"
+    delimiter="LC"
     out_file="$out_dir/${ident}.hpp"
 
     {

@@ -68,6 +68,74 @@ struct to_bigint_string_view<BigInt<Storage>> : bigint_string_view_storage<Stora
 template<typename Term>
 inline constexpr std::string_view to_bigint_string_view_v = to_bigint_string_view<Term>::value;
 
+template<auto Storage>
+struct decimal_string_view_storage {
+private:
+    inline static constexpr auto normalized = detail::normalize_decimal_storage(Storage);
+
+    static consteval std::size_t compute_length() {
+        const std::size_t sign = normalized.negative ? 1u : 0u;
+        if (normalized.scale <= 0) {
+            return sign + normalized.size;
+        }
+        const std::size_t scale = static_cast<std::size_t>(normalized.scale);
+        if (scale >= normalized.size) {
+            return sign + 2u + (scale - normalized.size) + normalized.size;
+        }
+        return sign + normalized.size + 1u;
+    }
+
+public:
+    inline static constexpr std::size_t length = compute_length();
+    inline static constexpr auto storage = [] {
+        std::array<char, decimal_capacity + 4> out{};
+        std::size_t cursor = 0;
+        if (normalized.negative) {
+            out[cursor++] = '-';
+        }
+
+        if (normalized.scale <= 0) {
+            for (std::size_t i = 0; i < normalized.size; ++i) {
+                out[cursor++] = normalized.digits[i];
+            }
+        } else {
+            const std::size_t scale = static_cast<std::size_t>(normalized.scale);
+            if (scale >= normalized.size) {
+                out[cursor++] = '0';
+                out[cursor++] = '.';
+                for (std::size_t i = 0; i < scale - normalized.size; ++i) {
+                    out[cursor++] = '0';
+                }
+                for (std::size_t i = 0; i < normalized.size; ++i) {
+                    out[cursor++] = normalized.digits[i];
+                }
+            } else {
+                const std::size_t integer_digits = normalized.size - scale;
+                for (std::size_t i = 0; i < integer_digits; ++i) {
+                    out[cursor++] = normalized.digits[i];
+                }
+                out[cursor++] = '.';
+                for (std::size_t i = integer_digits; i < normalized.size; ++i) {
+                    out[cursor++] = normalized.digits[i];
+                }
+            }
+        }
+
+        out[cursor] = '\0';
+        return out;
+    }();
+    inline static constexpr std::string_view value{storage.data(), length};
+};
+
+template<typename Term>
+struct to_decimal_string_view;
+
+template<auto Storage>
+struct to_decimal_string_view<Decimal<Storage>> : decimal_string_view_storage<Storage> {};
+
+template<typename Term>
+inline constexpr std::string_view to_decimal_string_view_v = to_decimal_string_view<Term>::value;
+
 template<typename Term>
 struct to_rational_string_view;
 
@@ -120,6 +188,16 @@ struct to_array<Set<Int<Ns>...>> {
     static constexpr std::array<int, sizeof...(Ns)> value = {Ns...};
 };
 
+template<int... Ns>
+struct to_array<Vector<Nat<Ns>...>> {
+    static constexpr std::array<int, sizeof...(Ns)> value = {Ns...};
+};
+
+template<int... Ns>
+struct to_array<Vector<Int<Ns>...>> {
+    static constexpr std::array<int, sizeof...(Ns)> value = {Ns...};
+};
+
 template<typename Term>
 inline constexpr auto to_array_v = to_array<Term>::value;
 
@@ -131,7 +209,21 @@ struct to_matrix<List<Rows...>> {
     static constexpr auto value = std::array{to_array<Rows>::value...};
 };
 
+template<typename... Rows>
+struct to_matrix<Matrix<Rows...>> {
+    static constexpr auto value = std::array{to_array<Rows>::value...};
+};
+
 template<typename Term>
 inline constexpr auto to_matrix_v = to_matrix<Term>::value;
+
+template<typename Stats>
+inline constexpr int reduction_count_v = Stats::reductions;
+
+template<typename Stats>
+inline constexpr int node_count_v = Stats::nodes;
+
+template<typename Stats>
+inline constexpr int approximation_count_v = Stats::approximations;
 
 } // namespace lc

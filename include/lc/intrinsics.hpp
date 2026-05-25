@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <utility>
 
 #include "core.hpp"
 
@@ -65,6 +66,46 @@ struct MapContainsKey {};
 struct MapFind {};
 struct MapErase {};
 struct MapSize {};
+struct Sqrt {};
+struct Exp {};
+struct Log {};
+struct Sin {};
+struct Cos {};
+struct Tan {};
+struct Asin {};
+struct Acos {};
+struct Atan {};
+struct VectorCtor {};
+struct MatrixCtor {};
+struct ComplexCtor {};
+struct VecAdd {};
+struct VecSub {};
+struct VecScale {};
+struct Dot {};
+struct Norm {};
+struct NormalizeVector {};
+struct MatAdd {};
+struct MatSub {};
+struct MatScale {};
+struct MatVecMul {};
+struct MatMul {};
+struct Transpose {};
+struct Determinant {};
+struct Inverse {};
+struct Conjugate {};
+struct NormSquared {};
+struct Magnitude {};
+struct Argument {};
+struct Mean {};
+struct Median {};
+struct Mode {};
+struct Variance {};
+struct StdDev {};
+struct Minimum {};
+struct Maximum {};
+struct StatRange {};
+struct Covariance {};
+struct Correlation {};
 
 namespace detail {
 
@@ -561,6 +602,486 @@ struct RationalParts<Rational<Num, Den>> {
     using numerator = Num;
     using denominator = Den;
 };
+
+template<typename T>
+struct IsDecimalLike : std::false_type {};
+
+template<auto Storage>
+struct IsDecimalLike<Decimal<Storage>> : std::true_type {};
+
+template<typename T>
+inline constexpr bool is_decimal_like_v = IsDecimalLike<T>::value;
+
+template<typename T>
+struct IsSymbolicReal : std::false_type {};
+
+template<typename Tag>
+struct IsSymbolicReal<Irrational<Tag>> : std::true_type {};
+
+template<typename Op, typename... Args>
+struct IsSymbolicReal<RealExpr<Op, Args...>> : std::true_type {};
+
+template<typename T>
+inline constexpr bool is_symbolic_real_v = IsSymbolicReal<T>::value;
+
+template<typename T>
+struct IsScalarReal
+    : std::bool_constant<
+          is_integer_like_v<T> ||
+          is_rational_like_v<T> ||
+          is_decimal_like_v<T> ||
+          is_symbolic_real_v<T>> {};
+
+template<typename T>
+inline constexpr bool is_scalar_real_v = IsScalarReal<T>::value;
+
+template<typename T>
+struct IsComplexLike : std::false_type {};
+
+template<typename Real, typename Imag>
+struct IsComplexLike<Complex<Real, Imag>> : std::true_type {};
+
+template<typename T>
+inline constexpr bool is_complex_like_v = IsComplexLike<T>::value;
+
+constexpr bool decimal_is_zero(const decimal_storage& value) {
+    return value.size == 1 && value.digits[0] == '0';
+}
+
+constexpr decimal_storage normalize_decimal_storage(decimal_storage value) {
+    while (value.size > 1 && value.scale > 0 && value.digits[value.size - 1] == '0') {
+        --value.size;
+        --value.scale;
+    }
+
+    std::size_t first = 0;
+    while (first + 1 < value.size && value.digits[first] == '0') {
+        ++first;
+    }
+
+    if (first != 0) {
+        for (std::size_t i = 0; i + first < value.size; ++i) {
+            value.digits[i] = value.digits[i + first];
+        }
+        value.size -= first;
+    }
+
+    if (decimal_is_zero(value)) {
+        value.negative = false;
+        value.scale = 0;
+    }
+
+    for (std::size_t i = value.size; i < decimal_capacity; ++i) {
+        value.digits[i] = '\0';
+    }
+    return value;
+}
+
+constexpr long double ld_abs(long double value) {
+    return value < 0.0L ? -value : value;
+}
+
+constexpr long double pi_ld = 3.141592653589793238462643383279502884L;
+constexpr long double e_ld = 2.718281828459045235360287471352662497L;
+constexpr long double ln2_ld = 0.693147180559945309417232121458176568L;
+
+constexpr long double reduce_angle(long double x) {
+    const long double two_pi = 2.0L * pi_ld;
+    while (x > pi_ld) {
+        x -= two_pi;
+    }
+    while (x < -pi_ld) {
+        x += two_pi;
+    }
+    return x;
+}
+
+constexpr long double pow_ld(long double base, int exp) {
+    long double result = 1.0L;
+    const bool negative = exp < 0;
+    int count = negative ? -exp : exp;
+    for (int i = 0; i < count; ++i) {
+        result *= base;
+    }
+    return negative ? (1.0L / result) : result;
+}
+
+constexpr long double sqrt_ld(long double value) {
+    if (value <= 0.0L) {
+        return 0.0L;
+    }
+    long double guess = value > 1.0L ? value : 1.0L;
+    for (int i = 0; i < 32; ++i) {
+        guess = 0.5L * (guess + value / guess);
+    }
+    return guess;
+}
+
+constexpr long double exp_ld(long double value) {
+    if (value == 0.0L) {
+        return 1.0L;
+    }
+    if (value < 0.0L) {
+        return 1.0L / exp_ld(-value);
+    }
+    if (value > 1.0L) {
+        const long double half = exp_ld(value / 2.0L);
+        return half * half;
+    }
+    long double term = 1.0L;
+    long double sum = 1.0L;
+    for (int n = 1; n < 48; ++n) {
+        term *= value / static_cast<long double>(n);
+        sum += term;
+    }
+    return sum;
+}
+
+constexpr long double log_ld(long double value) {
+    if (value <= 0.0L) {
+        return 0.0L;
+    }
+    int shifts = 0;
+    while (value > 1.5L) {
+        value /= 2.0L;
+        ++shifts;
+    }
+    while (value < 0.75L) {
+        value *= 2.0L;
+        --shifts;
+    }
+    const long double y = (value - 1.0L) / (value + 1.0L);
+    const long double y2 = y * y;
+    long double term = y;
+    long double sum = 0.0L;
+    for (int n = 1; n < 80; n += 2) {
+        sum += term / static_cast<long double>(n);
+        term *= y2;
+    }
+    return 2.0L * sum + static_cast<long double>(shifts) * ln2_ld;
+}
+
+constexpr long double sin_ld(long double value) {
+    value = reduce_angle(value);
+    long double term = value;
+    long double sum = value;
+    for (int n = 1; n < 28; ++n) {
+        const long double denom = static_cast<long double>((2 * n) * (2 * n + 1));
+        term *= -value * value / denom;
+        sum += term;
+    }
+    return sum;
+}
+
+constexpr long double cos_ld(long double value) {
+    value = reduce_angle(value);
+    long double term = 1.0L;
+    long double sum = 1.0L;
+    for (int n = 1; n < 28; ++n) {
+        const long double denom = static_cast<long double>((2 * n - 1) * (2 * n));
+        term *= -value * value / denom;
+        sum += term;
+    }
+    return sum;
+}
+
+constexpr long double atan_ld(long double value) {
+    if (value < 0.0L) {
+        return -atan_ld(-value);
+    }
+    if (value > 1.0L) {
+        return (pi_ld / 2.0L) - atan_ld(1.0L / value);
+    }
+    long double term = value;
+    long double sum = value;
+    const long double value_sq = value * value;
+    for (int n = 1; n < 80; ++n) {
+        term *= -value_sq;
+        sum += term / static_cast<long double>(2 * n + 1);
+    }
+    return sum;
+}
+
+constexpr long double asin_ld(long double value) {
+    return atan_ld(value / sqrt_ld(1.0L - value * value));
+}
+
+constexpr long double acos_ld(long double value) {
+    return (pi_ld / 2.0L) - asin_ld(value);
+}
+
+constexpr decimal_storage make_decimal_from_long_double(long double raw, int digits) {
+    decimal_storage value{};
+    value.negative = raw < 0.0L;
+    long double number = ld_abs(raw);
+    const int fractional_digits = digits < 0 ? 0 : digits;
+
+    char integer_rev[decimal_capacity] = {};
+    std::size_t integer_size = 0;
+    unsigned long long integer_part = static_cast<unsigned long long>(number);
+    long double fraction = number - static_cast<long double>(integer_part);
+
+    if (integer_part == 0ULL) {
+        integer_rev[integer_size++] = '0';
+    } else {
+        while (integer_part != 0ULL && integer_size < decimal_capacity) {
+            integer_rev[integer_size++] = static_cast<char>('0' + (integer_part % 10ULL));
+            integer_part /= 10ULL;
+        }
+    }
+
+    value.size = 0;
+    for (std::size_t i = 0; i < integer_size; ++i) {
+        value.digits[value.size++] = integer_rev[integer_size - 1 - i];
+    }
+
+    for (int i = 0; i < fractional_digits && value.size < decimal_capacity; ++i) {
+        fraction *= 10.0L;
+        int digit = static_cast<int>(fraction);
+        if (digit < 0) {
+            digit = 0;
+        }
+        if (digit > 9) {
+            digit = 9;
+        }
+        value.digits[value.size++] = static_cast<char>('0' + digit);
+        fraction -= static_cast<long double>(digit);
+    }
+
+    value.scale = fractional_digits;
+    return normalize_decimal_storage(value);
+}
+
+template<typename T>
+struct ApproxLongDouble;
+
+template<int N>
+struct ApproxLongDouble<Nat<N>> {
+    static constexpr long double value = static_cast<long double>(N);
+};
+
+template<int N>
+struct ApproxLongDouble<Int<N>> {
+    static constexpr long double value = static_cast<long double>(N);
+};
+
+template<auto Storage>
+struct ApproxLongDouble<BigInt<Storage>> {
+    static constexpr long double value = [] {
+        const auto normalized = normalize_bigint_storage(Storage);
+        long double result = 0.0L;
+        for (std::size_t i = 0; i < normalized.size; ++i) {
+            result = (result * 10.0L) + static_cast<long double>(digit_value(normalized.digits[i]));
+        }
+        return normalized.negative ? -result : result;
+    }();
+};
+
+template<typename Num, typename Den>
+struct ApproxLongDouble<Rational<Num, Den>> {
+    static constexpr long double value = ApproxLongDouble<Num>::value / ApproxLongDouble<Den>::value;
+};
+
+template<auto Storage>
+struct ApproxLongDouble<Decimal<Storage>> {
+    static constexpr long double value = [] {
+        const auto normalized = normalize_decimal_storage(Storage);
+        long double result = 0.0L;
+        for (std::size_t i = 0; i < normalized.size; ++i) {
+            result = (result * 10.0L) + static_cast<long double>(digit_value(normalized.digits[i]));
+        }
+        result /= pow_ld(10.0L, normalized.scale);
+        return normalized.negative ? -result : result;
+    }();
+};
+
+template<>
+struct ApproxLongDouble<Irrational<pi_tag>> {
+    static constexpr long double value = pi_ld;
+};
+
+template<>
+struct ApproxLongDouble<Irrational<e_tag>> {
+    static constexpr long double value = e_ld;
+};
+
+template<>
+struct ApproxLongDouble<Irrational<tau_tag>> {
+    static constexpr long double value = 2.0L * pi_ld;
+};
+
+template<typename Op, typename... Args>
+struct ApproxLongDouble<RealExpr<Op, Args...>>;
+
+template<typename Left, typename Right>
+struct ApproxLongDouble<RealExpr<Add, Left, Right>> {
+    static constexpr long double value = ApproxLongDouble<Left>::value + ApproxLongDouble<Right>::value;
+};
+
+template<typename Left, typename Right>
+struct ApproxLongDouble<RealExpr<Sub, Left, Right>> {
+    static constexpr long double value = ApproxLongDouble<Left>::value - ApproxLongDouble<Right>::value;
+};
+
+template<typename Left, typename Right>
+struct ApproxLongDouble<RealExpr<Mul, Left, Right>> {
+    static constexpr long double value = ApproxLongDouble<Left>::value * ApproxLongDouble<Right>::value;
+};
+
+template<typename Left, typename Right>
+struct ApproxLongDouble<RealExpr<Div, Left, Right>> {
+    static constexpr long double value = ApproxLongDouble<Left>::value / ApproxLongDouble<Right>::value;
+};
+
+template<typename Arg>
+struct ApproxLongDouble<RealExpr<Sqrt, Arg>> {
+    static constexpr long double value = sqrt_ld(ApproxLongDouble<Arg>::value);
+};
+
+template<typename Arg>
+struct ApproxLongDouble<RealExpr<Exp, Arg>> {
+    static constexpr long double value = exp_ld(ApproxLongDouble<Arg>::value);
+};
+
+template<typename Arg>
+struct ApproxLongDouble<RealExpr<Log, Arg>> {
+    static constexpr long double value = log_ld(ApproxLongDouble<Arg>::value);
+};
+
+template<typename Arg>
+struct ApproxLongDouble<RealExpr<Sin, Arg>> {
+    static constexpr long double value = sin_ld(ApproxLongDouble<Arg>::value);
+};
+
+template<typename Arg>
+struct ApproxLongDouble<RealExpr<Cos, Arg>> {
+    static constexpr long double value = cos_ld(ApproxLongDouble<Arg>::value);
+};
+
+template<typename Arg>
+struct ApproxLongDouble<RealExpr<Tan, Arg>> {
+    static constexpr long double value = sin_ld(ApproxLongDouble<Arg>::value) / cos_ld(ApproxLongDouble<Arg>::value);
+};
+
+template<typename Arg>
+struct ApproxLongDouble<RealExpr<Asin, Arg>> {
+    static constexpr long double value = asin_ld(ApproxLongDouble<Arg>::value);
+};
+
+template<typename Arg>
+struct ApproxLongDouble<RealExpr<Acos, Arg>> {
+    static constexpr long double value = acos_ld(ApproxLongDouble<Arg>::value);
+};
+
+template<typename Arg>
+struct ApproxLongDouble<RealExpr<Atan, Arg>> {
+    static constexpr long double value = atan_ld(ApproxLongDouble<Arg>::value);
+};
+
+template<typename T, int Digits>
+struct ApproxValue {
+    using type = T;
+};
+
+template<int N, int Digits>
+struct ApproxValue<Nat<N>, Digits> {
+    using type = Decimal<make_decimal_from_long_double(static_cast<long double>(N), Digits)>;
+};
+
+template<int N, int Digits>
+struct ApproxValue<Int<N>, Digits> {
+    using type = Decimal<make_decimal_from_long_double(static_cast<long double>(N), Digits)>;
+};
+
+template<auto Storage, int Digits>
+struct ApproxValue<BigInt<Storage>, Digits> {
+    using type = Decimal<make_decimal_from_long_double(ApproxLongDouble<BigInt<Storage>>::value, Digits)>;
+};
+
+template<typename Num, typename Den, int Digits>
+struct ApproxValue<Rational<Num, Den>, Digits> {
+    using type = Decimal<make_decimal_from_long_double(ApproxLongDouble<Rational<Num, Den>>::value, Digits)>;
+};
+
+template<auto Storage, int Digits>
+struct ApproxValue<Decimal<Storage>, Digits> {
+    using type = Decimal<normalize_decimal_storage(Storage)>;
+};
+
+template<typename Tag, int Digits>
+struct ApproxValue<Irrational<Tag>, Digits> {
+    using type = Decimal<make_decimal_from_long_double(ApproxLongDouble<Irrational<Tag>>::value, Digits)>;
+};
+
+template<typename Op, typename... Args, int Digits>
+struct ApproxValue<RealExpr<Op, Args...>, Digits> {
+    using type = Decimal<make_decimal_from_long_double(ApproxLongDouble<RealExpr<Op, Args...>>::value, Digits)>;
+};
+
+template<typename Real, typename Imag, int Digits>
+struct ApproxValue<Complex<Real, Imag>, Digits> {
+    using type = Complex<typename ApproxValue<Real, Digits>::type, typename ApproxValue<Imag, Digits>::type>;
+};
+
+template<typename T, int Digits>
+using ApproxValue_t = typename ApproxValue<T, Digits>::type;
+
+template<typename T>
+struct BigIntFitsLongLong : std::false_type {};
+
+template<int N>
+struct BigIntFitsLongLong<Nat<N>> : std::true_type {};
+
+template<int N>
+struct BigIntFitsLongLong<Int<N>> : std::true_type {};
+
+template<auto Storage>
+struct BigIntFitsLongLong<BigInt<Storage>>
+    : std::bool_constant<(normalize_bigint_storage(Storage).size < 18)> {};
+
+template<typename T>
+inline constexpr bool bigint_fits_ll_v = BigIntFitsLongLong<T>::value;
+
+template<typename T>
+constexpr long long bigint_to_ll() {
+    constexpr auto normalized = bigint_storage_of_v<T>;
+    long long result = 0;
+    for (std::size_t i = 0; i < normalized.size; ++i) {
+        result = result * 10LL + static_cast<long long>(digit_value(normalized.digits[i]));
+    }
+    return normalized.negative ? -result : result;
+}
+
+template<typename T>
+struct VectorSize;
+
+template<typename... Elems>
+struct VectorSize<Vector<Elems...>> : std::integral_constant<std::size_t, sizeof...(Elems)> {};
+
+template<std::size_t Index, typename VectorT>
+struct VectorAt;
+
+template<std::size_t Index, typename Head, typename... Tail>
+struct VectorAt<Index, Vector<Head, Tail...>> : VectorAt<Index - 1, Vector<Tail...>> {};
+
+template<typename Head, typename... Tail>
+struct VectorAt<0, Vector<Head, Tail...>> {
+    using type = Head;
+};
+
+template<std::size_t Index, typename VectorT>
+using VectorAt_t = typename VectorAt<Index, VectorT>::type;
+
+template<typename... Ts>
+struct VectorPushFront;
+
+template<typename T, typename... Ts>
+struct VectorPushFront<T, Vector<Ts...>> {
+    using type = Vector<T, Ts...>;
+};
+
+template<typename T, typename VectorT>
+using VectorPushFront_t = typename VectorPushFront<T, VectorT>::type;
 
 template<std::size_t N, std::size_t M>
 constexpr bool string_starts_with_chars(const char (&text)[N], const char (&prefix)[M]) {
@@ -1277,6 +1798,431 @@ struct SieveList<List<Nat<Prime>, Rest...>> {
 template<typename ListT>
 using SieveList_t = typename SieveList<ListT>::type;
 
+template<typename Left, typename Right>
+using ScalarAdd_t = Normalize_t<Apply_t<Add, Left, Right>, 4096>;
+
+template<typename Left, typename Right>
+using ScalarSub_t = Normalize_t<Apply_t<Sub, Left, Right>, 4096>;
+
+template<typename Left, typename Right>
+using ScalarMul_t = Normalize_t<Apply_t<Mul, Left, Right>, 4096>;
+
+template<typename Left, typename Right>
+using ScalarDiv_t = Normalize_t<Apply_t<Div, Left, Right>, 4096>;
+
+template<typename Value>
+using ScalarSqrt_t = Normalize_t<Apply_t<Sqrt, Value>, 4096>;
+
+template<typename VectorT>
+struct VectorSum;
+
+template<>
+struct VectorSum<Vector<>> {
+    using type = Int<0>;
+};
+
+template<typename Head, typename... Tail>
+struct VectorSum<Vector<Head, Tail...>> {
+    using type = ScalarAdd_t<Head, typename VectorSum<Vector<Tail...>>::type>;
+};
+
+template<typename VectorT>
+using VectorSum_t = typename VectorSum<VectorT>::type;
+
+template<typename LeftVec, typename RightVec>
+struct VectorAddT;
+
+template<>
+struct VectorAddT<Vector<>, Vector<>> {
+    using type = Vector<>;
+};
+
+template<typename LHead, typename... LTail, typename RHead, typename... RTail>
+struct VectorAddT<Vector<LHead, LTail...>, Vector<RHead, RTail...>> {
+    using type = VectorPushFront_t<
+        ScalarAdd_t<LHead, RHead>,
+        typename VectorAddT<Vector<LTail...>, Vector<RTail...>>::type>;
+};
+
+template<typename LeftVec, typename RightVec>
+using VectorAdd_t = typename VectorAddT<LeftVec, RightVec>::type;
+
+template<typename LeftVec, typename RightVec>
+struct VectorSubT;
+
+template<>
+struct VectorSubT<Vector<>, Vector<>> {
+    using type = Vector<>;
+};
+
+template<typename LHead, typename... LTail, typename RHead, typename... RTail>
+struct VectorSubT<Vector<LHead, LTail...>, Vector<RHead, RTail...>> {
+    using type = VectorPushFront_t<
+        ScalarSub_t<LHead, RHead>,
+        typename VectorSubT<Vector<LTail...>, Vector<RTail...>>::type>;
+};
+
+template<typename LeftVec, typename RightVec>
+using VectorSub_t = typename VectorSubT<LeftVec, RightVec>::type;
+
+template<typename Scalar, typename VectorT>
+struct VectorScaleT;
+
+template<typename Scalar>
+struct VectorScaleT<Scalar, Vector<>> {
+    using type = Vector<>;
+};
+
+template<typename Scalar, typename Head, typename... Tail>
+struct VectorScaleT<Scalar, Vector<Head, Tail...>> {
+    using type = VectorPushFront_t<
+        ScalarMul_t<Scalar, Head>,
+        typename VectorScaleT<Scalar, Vector<Tail...>>::type>;
+};
+
+template<typename Scalar, typename VectorT>
+using VectorScale_t = typename VectorScaleT<Scalar, VectorT>::type;
+
+template<typename LeftVec, typename RightVec>
+struct VectorDotT;
+
+template<>
+struct VectorDotT<Vector<>, Vector<>> {
+    using type = Int<0>;
+};
+
+template<typename LHead, typename... LTail, typename RHead, typename... RTail>
+struct VectorDotT<Vector<LHead, LTail...>, Vector<RHead, RTail...>> {
+    using type = ScalarAdd_t<
+        ScalarMul_t<LHead, RHead>,
+        typename VectorDotT<Vector<LTail...>, Vector<RTail...>>::type>;
+};
+
+template<typename LeftVec, typename RightVec>
+using VectorDot_t = typename VectorDotT<LeftVec, RightVec>::type;
+
+template<typename VectorT>
+using VectorNorm_t = ScalarSqrt_t<VectorDot_t<VectorT, VectorT>>;
+
+template<typename VectorT, typename NormT>
+struct VectorNormalizeT;
+
+template<typename NormT>
+struct VectorNormalizeT<Vector<>, NormT> {
+    using type = Vector<>;
+};
+
+template<typename Head, typename... Tail, typename NormT>
+struct VectorNormalizeT<Vector<Head, Tail...>, NormT> {
+    using type = VectorPushFront_t<
+        ScalarDiv_t<Head, NormT>,
+        typename VectorNormalizeT<Vector<Tail...>, NormT>::type>;
+};
+
+template<typename VectorT>
+using VectorNormalize_t = typename VectorNormalizeT<VectorT, VectorNorm_t<VectorT>>::type;
+
+template<typename Row, typename MatrixT>
+struct MatrixPushFront;
+
+template<typename Row, typename... Rows>
+struct MatrixPushFront<Row, Matrix<Rows...>> {
+    using type = Matrix<Row, Rows...>;
+};
+
+template<typename Row, typename MatrixT>
+using MatrixPushFront_t = typename MatrixPushFront<Row, MatrixT>::type;
+
+template<typename MatrixT, typename Scalar>
+struct MatrixScaleT;
+
+template<typename Scalar>
+struct MatrixScaleT<Matrix<>, Scalar> {
+    using type = Matrix<>;
+};
+
+template<typename Row, typename... RestRows, typename Scalar>
+struct MatrixScaleT<Matrix<Row, RestRows...>, Scalar> {
+    using type = MatrixPushFront_t<
+        VectorScale_t<Scalar, Row>,
+        typename MatrixScaleT<Matrix<RestRows...>, Scalar>::type>;
+};
+
+template<typename MatrixT, typename Scalar>
+using MatrixScale_t = typename MatrixScaleT<MatrixT, Scalar>::type;
+
+template<typename LeftMat, typename RightMat>
+struct MatrixAddT;
+
+template<>
+struct MatrixAddT<Matrix<>, Matrix<>> {
+    using type = Matrix<>;
+};
+
+template<typename LRow, typename... LRows, typename RRow, typename... RRows>
+struct MatrixAddT<Matrix<LRow, LRows...>, Matrix<RRow, RRows...>> {
+    using type = MatrixPushFront_t<
+        VectorAdd_t<LRow, RRow>,
+        typename MatrixAddT<Matrix<LRows...>, Matrix<RRows...>>::type>;
+};
+
+template<typename LeftMat, typename RightMat>
+using MatrixAdd_t = typename MatrixAddT<LeftMat, RightMat>::type;
+
+template<typename LeftMat, typename RightMat>
+struct MatrixSubT;
+
+template<>
+struct MatrixSubT<Matrix<>, Matrix<>> {
+    using type = Matrix<>;
+};
+
+template<typename LRow, typename... LRows, typename RRow, typename... RRows>
+struct MatrixSubT<Matrix<LRow, LRows...>, Matrix<RRow, RRows...>> {
+    using type = MatrixPushFront_t<
+        VectorSub_t<LRow, RRow>,
+        typename MatrixSubT<Matrix<LRows...>, Matrix<RRows...>>::type>;
+};
+
+template<typename LeftMat, typename RightMat>
+using MatrixSub_t = typename MatrixSubT<LeftMat, RightMat>::type;
+
+template<std::size_t Index, typename MatrixT>
+struct MatrixColumn;
+
+template<std::size_t Index>
+struct MatrixColumn<Index, Matrix<>> {
+    using type = Vector<>;
+};
+
+template<std::size_t Index, typename Row, typename... RestRows>
+struct MatrixColumn<Index, Matrix<Row, RestRows...>> {
+    using type = VectorPushFront_t<
+        VectorAt_t<Index, Row>,
+        typename MatrixColumn<Index, Matrix<RestRows...>>::type>;
+};
+
+template<std::size_t Index, typename MatrixT>
+using MatrixColumn_t = typename MatrixColumn<Index, MatrixT>::type;
+
+template<typename MatrixT, typename Indices>
+struct MatrixTransposeImpl;
+
+template<typename... Rows, std::size_t... Indices>
+struct MatrixTransposeImpl<Matrix<Rows...>, std::index_sequence<Indices...>> {
+    using type = Matrix<MatrixColumn_t<Indices, Matrix<Rows...>>...>;
+};
+
+template<typename MatrixT>
+struct MatrixTranspose;
+
+template<typename FirstRow, typename... RestRows>
+struct MatrixTranspose<Matrix<FirstRow, RestRows...>> {
+    using type = typename MatrixTransposeImpl<
+        Matrix<FirstRow, RestRows...>,
+        std::make_index_sequence<VectorSize<FirstRow>::value>>::type;
+};
+
+template<typename MatrixT>
+using MatrixTranspose_t = typename MatrixTranspose<MatrixT>::type;
+
+template<typename MatrixT, typename VectorT>
+struct MatrixVecMulT;
+
+template<typename VectorT>
+struct MatrixVecMulT<Matrix<>, VectorT> {
+    using type = Vector<>;
+};
+
+template<typename Row, typename... RestRows, typename VectorT>
+struct MatrixVecMulT<Matrix<Row, RestRows...>, VectorT> {
+    using type = VectorPushFront_t<
+        VectorDot_t<Row, VectorT>,
+        typename MatrixVecMulT<Matrix<RestRows...>, VectorT>::type>;
+};
+
+template<typename MatrixT, typename VectorT>
+using MatrixVecMul_t = typename MatrixVecMulT<MatrixT, VectorT>::type;
+
+template<typename LeftMat, typename RightMat>
+struct MatrixMulT;
+
+template<typename... LeftRows, typename RightMat>
+struct MatrixMulT<Matrix<LeftRows...>, RightMat> {
+private:
+    using transposed = MatrixTranspose_t<RightMat>;
+
+    template<typename Row, typename TMat>
+    struct MultiplyRow;
+
+    template<typename Row>
+    struct MultiplyRow<Row, Matrix<>> {
+        using type = Vector<>;
+    };
+
+    template<typename Row, typename Col, typename... RestCols>
+    struct MultiplyRow<Row, Matrix<Col, RestCols...>> {
+        using type = VectorPushFront_t<
+            VectorDot_t<Row, Col>,
+            typename MultiplyRow<Row, Matrix<RestCols...>>::type>;
+    };
+
+public:
+    using type = Matrix<typename MultiplyRow<LeftRows, transposed>::type...>;
+};
+
+template<typename LeftMat, typename RightMat>
+using MatrixMul_t = typename MatrixMulT<LeftMat, RightMat>::type;
+
+template<typename MatrixT>
+struct DeterminantT;
+
+template<typename A, typename B, typename C, typename D>
+struct DeterminantT<Matrix<Vector<A, B>, Vector<C, D>>> {
+    using type = ScalarSub_t<ScalarMul_t<A, D>, ScalarMul_t<B, C>>;
+};
+
+template<typename A, typename B, typename C, typename D, typename E, typename F, typename G, typename H, typename I>
+struct DeterminantT<Matrix<Vector<A, B, C>, Vector<D, E, F>, Vector<G, H, I>>> {
+private:
+    using term1 = ScalarMul_t<A, ScalarSub_t<ScalarMul_t<E, I>, ScalarMul_t<F, H>>>;
+    using term2 = ScalarMul_t<B, ScalarSub_t<ScalarMul_t<D, I>, ScalarMul_t<F, G>>>;
+    using term3 = ScalarMul_t<C, ScalarSub_t<ScalarMul_t<D, H>, ScalarMul_t<E, G>>>;
+
+public:
+    using type = ScalarAdd_t<ScalarSub_t<term1, term2>, term3>;
+};
+
+template<typename MatrixT>
+using Determinant_t = typename DeterminantT<MatrixT>::type;
+
+template<typename MatrixT>
+struct InverseT;
+
+template<typename A, typename B, typename C, typename D>
+struct InverseT<Matrix<Vector<A, B>, Vector<C, D>>> {
+private:
+    using det = Determinant_t<Matrix<Vector<A, B>, Vector<C, D>>>;
+
+public:
+    using type = Matrix<
+        Vector<ScalarDiv_t<D, det>, ScalarDiv_t<ScalarMul_t<Int<-1>, B>, det>>,
+        Vector<ScalarDiv_t<ScalarMul_t<Int<-1>, C>, det>, ScalarDiv_t<A, det>>
+    >;
+};
+
+template<typename A, typename B, typename C, typename D, typename E, typename F, typename G, typename H, typename I>
+struct InverseT<Matrix<Vector<A, B, C>, Vector<D, E, F>, Vector<G, H, I>>> {
+private:
+    using det = Determinant_t<Matrix<Vector<A, B, C>, Vector<D, E, F>, Vector<G, H, I>>>;
+    using c11 = ScalarSub_t<ScalarMul_t<E, I>, ScalarMul_t<F, H>>;
+    using c12 = ScalarMul_t<Int<-1>, ScalarSub_t<ScalarMul_t<D, I>, ScalarMul_t<F, G>>>;
+    using c13 = ScalarSub_t<ScalarMul_t<D, H>, ScalarMul_t<E, G>>;
+    using c21 = ScalarMul_t<Int<-1>, ScalarSub_t<ScalarMul_t<B, I>, ScalarMul_t<C, H>>>;
+    using c22 = ScalarSub_t<ScalarMul_t<A, I>, ScalarMul_t<C, G>>;
+    using c23 = ScalarMul_t<Int<-1>, ScalarSub_t<ScalarMul_t<A, H>, ScalarMul_t<B, G>>>;
+    using c31 = ScalarSub_t<ScalarMul_t<B, F>, ScalarMul_t<C, E>>;
+    using c32 = ScalarMul_t<Int<-1>, ScalarSub_t<ScalarMul_t<A, F>, ScalarMul_t<C, D>>>;
+    using c33 = ScalarSub_t<ScalarMul_t<A, E>, ScalarMul_t<B, D>>;
+    using adj = Matrix<Vector<c11, c21, c31>, Vector<c12, c22, c32>, Vector<c13, c23, c33>>;
+
+    template<typename Row>
+    struct DivideRow;
+
+    template<typename X, typename Y, typename Z>
+    struct DivideRow<Vector<X, Y, Z>> {
+        using type = Vector<ScalarDiv_t<X, det>, ScalarDiv_t<Y, det>, ScalarDiv_t<Z, det>>;
+    };
+
+public:
+    using type = Matrix<
+        typename DivideRow<Vector<c11, c21, c31>>::type,
+        typename DivideRow<Vector<c12, c22, c32>>::type,
+        typename DivideRow<Vector<c13, c23, c33>>::type
+    >;
+};
+
+template<typename MatrixT>
+using Inverse_t = typename InverseT<MatrixT>::type;
+
+template<typename VectorT>
+using Mean_t = ScalarDiv_t<VectorSum_t<VectorT>, Nat<static_cast<int>(VectorSize<VectorT>::value)>>;
+
+template<typename VectorT, typename MeanValue>
+struct CenterVectorT;
+
+template<typename MeanValue>
+struct CenterVectorT<Vector<>, MeanValue> {
+    using type = Vector<>;
+};
+
+template<typename Head, typename... Tail, typename MeanValue>
+struct CenterVectorT<Vector<Head, Tail...>, MeanValue> {
+    using type = VectorPushFront_t<
+        ScalarSub_t<Head, MeanValue>,
+        typename CenterVectorT<Vector<Tail...>, MeanValue>::type>;
+};
+
+template<typename VectorT>
+using Variance_t = ScalarDiv_t<
+    VectorDot_t<typename CenterVectorT<VectorT, Mean_t<VectorT>>::type, typename CenterVectorT<VectorT, Mean_t<VectorT>>::type>,
+    Nat<static_cast<int>(VectorSize<VectorT>::value)>>;
+
+template<typename VectorT>
+using StdDev_t = ScalarSqrt_t<Variance_t<VectorT>>;
+
+template<typename VectorT>
+struct MinimumT;
+
+template<typename Head>
+struct MinimumT<Vector<Head>> {
+    using type = Head;
+};
+
+template<typename Head, typename Next, typename... Tail>
+struct MinimumT<Vector<Head, Next, Tail...>> {
+private:
+    using smaller = Normalize_t<Apply_t<Lt, Head, Next>, 4096>;
+
+public:
+    using type = typename MinimumT<Vector<IfType_t<smaller::value, Head, Next>, Tail...>>::type;
+};
+
+template<typename VectorT>
+using Minimum_t = typename MinimumT<VectorT>::type;
+
+template<typename VectorT>
+struct MaximumT;
+
+template<typename Head>
+struct MaximumT<Vector<Head>> {
+    using type = Head;
+};
+
+template<typename Head, typename Next, typename... Tail>
+struct MaximumT<Vector<Head, Next, Tail...>> {
+private:
+    using larger = Normalize_t<Apply_t<Gt, Head, Next>, 4096>;
+
+public:
+    using type = typename MaximumT<Vector<IfType_t<larger::value, Head, Next>, Tail...>>::type;
+};
+
+template<typename VectorT>
+using Maximum_t = typename MaximumT<VectorT>::type;
+
+template<typename LeftVec, typename RightVec>
+using Covariance_t = ScalarDiv_t<
+    VectorDot_t<
+        typename CenterVectorT<LeftVec, Mean_t<LeftVec>>::type,
+        typename CenterVectorT<RightVec, Mean_t<RightVec>>::type>,
+    Nat<static_cast<int>(VectorSize<LeftVec>::value)>>;
+
+template<typename LeftVec, typename RightVec>
+using Correlation_t = ScalarDiv_t<
+    Covariance_t<LeftVec, RightVec>,
+    ScalarMul_t<StdDev_t<LeftVec>, StdDev_t<RightVec>>>;
+
 template<typename Term>
 struct IntrinsicStep {
     using type = ReductionResult<Term, false>;
@@ -1744,6 +2690,345 @@ struct IntrinsicStep<Call<IsZero, Rational<Num, Den>>> {
     using type = ReductionResult<Bool<bigint_is_zero(bigint_storage_of_v<Num>)>, true>;
 };
 
+template<typename Arg>
+struct IntrinsicStep<Call<Sqrt, Arg>> {
+    using type = ReductionResult<RealExpr<Sqrt, Arg>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Sqrt, Nat<0>>> {
+    using type = ReductionResult<Nat<0>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Sqrt, Nat<1>>> {
+    using type = ReductionResult<Nat<1>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Sqrt, Nat<4>>> {
+    using type = ReductionResult<Nat<2>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Sqrt, Int<0>>> {
+    using type = ReductionResult<Int<0>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Sqrt, Int<1>>> {
+    using type = ReductionResult<Int<1>, true>;
+};
+
+template<typename Arg>
+struct IntrinsicStep<Call<Exp, Arg>> {
+    using type = ReductionResult<RealExpr<Exp, Arg>, true>;
+};
+
+template<typename Arg>
+struct IntrinsicStep<Call<Log, Arg>> {
+    using type = ReductionResult<RealExpr<Log, Arg>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Exp, Int<0>>> {
+    using type = ReductionResult<Nat<1>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Log, Int<1>>> {
+    using type = ReductionResult<Nat<0>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Log, Nat<1>>> {
+    using type = ReductionResult<Nat<0>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Log, Irrational<e_tag>>> {
+    using type = ReductionResult<Nat<1>, true>;
+};
+
+template<typename Arg>
+struct IntrinsicStep<Call<Sin, Arg>> {
+    using type = ReductionResult<RealExpr<Sin, Arg>, true>;
+};
+
+template<typename Arg>
+struct IntrinsicStep<Call<Cos, Arg>> {
+    using type = ReductionResult<RealExpr<Cos, Arg>, true>;
+};
+
+template<typename Arg>
+struct IntrinsicStep<Call<Tan, Arg>> {
+    using type = ReductionResult<RealExpr<Tan, Arg>, true>;
+};
+
+template<typename Arg>
+struct IntrinsicStep<Call<Asin, Arg>> {
+    using type = ReductionResult<RealExpr<Asin, Arg>, true>;
+};
+
+template<typename Arg>
+struct IntrinsicStep<Call<Acos, Arg>> {
+    using type = ReductionResult<RealExpr<Acos, Arg>, true>;
+};
+
+template<typename Arg>
+struct IntrinsicStep<Call<Atan, Arg>> {
+    using type = ReductionResult<RealExpr<Atan, Arg>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Sin, Int<0>>> {
+    using type = ReductionResult<Int<0>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Cos, Int<0>>> {
+    using type = ReductionResult<Int<1>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Tan, Int<0>>> {
+    using type = ReductionResult<Int<0>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Sin, RealExpr<Div, Irrational<pi_tag>, Int<6>>>> {
+    using type = ReductionResult<NormalizeRational_t<BigIntFromInt_t<1>, BigIntFromInt_t<2>>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Sin, RealExpr<Div, Irrational<pi_tag>, Nat<6>>>> {
+    using type = ReductionResult<NormalizeRational_t<BigIntFromInt_t<1>, BigIntFromInt_t<2>>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Cos, RealExpr<Div, Irrational<pi_tag>, Int<3>>>> {
+    using type = ReductionResult<NormalizeRational_t<BigIntFromInt_t<1>, BigIntFromInt_t<2>>, true>;
+};
+
+template<>
+struct IntrinsicStep<Call<Cos, RealExpr<Div, Irrational<pi_tag>, Nat<3>>>> {
+    using type = ReductionResult<NormalizeRational_t<BigIntFromInt_t<1>, BigIntFromInt_t<2>>, true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_symbolic_real_v<Left> || is_symbolic_real_v<Right> || is_decimal_like_v<Left> || is_decimal_like_v<Right>) &&
+              is_scalar_real_v<Left> && is_scalar_real_v<Right>)
+struct IntrinsicStep<Call<Add, Left, Right>> {
+    using type = ReductionResult<RealExpr<Add, Left, Right>, true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_symbolic_real_v<Left> || is_symbolic_real_v<Right> || is_decimal_like_v<Left> || is_decimal_like_v<Right>) &&
+              is_scalar_real_v<Left> && is_scalar_real_v<Right>)
+struct IntrinsicStep<Call<Sub, Left, Right>> {
+    using type = ReductionResult<RealExpr<Sub, Left, Right>, true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_symbolic_real_v<Left> || is_symbolic_real_v<Right> || is_decimal_like_v<Left> || is_decimal_like_v<Right>) &&
+              is_scalar_real_v<Left> && is_scalar_real_v<Right>)
+struct IntrinsicStep<Call<Mul, Left, Right>> {
+    using type = ReductionResult<RealExpr<Mul, Left, Right>, true>;
+};
+
+template<typename Left, typename Right>
+    requires ((is_symbolic_real_v<Left> || is_symbolic_real_v<Right> || is_decimal_like_v<Left> || is_decimal_like_v<Right>) &&
+              is_scalar_real_v<Left> && is_scalar_real_v<Right>)
+struct IntrinsicStep<Call<Div, Left, Right>> {
+    using type = ReductionResult<RealExpr<Div, Left, Right>, true>;
+};
+
+template<typename Real, typename Imag>
+struct IntrinsicStep<Call<Conjugate, Complex<Real, Imag>>> {
+    using type = ReductionResult<Complex<Real, ScalarMul_t<Int<-1>, Imag>>, true>;
+};
+
+template<typename Real, typename Imag>
+struct IntrinsicStep<Call<NormSquared, Complex<Real, Imag>>> {
+    using type = ReductionResult<ScalarAdd_t<ScalarMul_t<Real, Real>, ScalarMul_t<Imag, Imag>>, true>;
+};
+
+template<typename Real, typename Imag>
+struct IntrinsicStep<Call<Magnitude, Complex<Real, Imag>>> {
+    using type = ReductionResult<ScalarSqrt_t<ScalarAdd_t<ScalarMul_t<Real, Real>, ScalarMul_t<Imag, Imag>>>, true>;
+};
+
+template<typename Real, typename Imag>
+struct IntrinsicStep<Call<Argument, Complex<Real, Imag>>> {
+    using type = ReductionResult<RealExpr<Atan, RealExpr<Div, Imag, Real>>, true>;
+};
+
+template<typename Real, typename Imag>
+struct IntrinsicStep<Call<ComplexCtor, Real, Imag>> {
+    using type = ReductionResult<Complex<Real, Imag>, true>;
+};
+
+template<typename LR, typename LI, typename RR, typename RI>
+struct IntrinsicStep<Call<Add, Complex<LR, LI>, Complex<RR, RI>>> {
+    using type = ReductionResult<Complex<ScalarAdd_t<LR, RR>, ScalarAdd_t<LI, RI>>, true>;
+};
+
+template<typename LR, typename LI, typename RR, typename RI>
+struct IntrinsicStep<Call<Sub, Complex<LR, LI>, Complex<RR, RI>>> {
+    using type = ReductionResult<Complex<ScalarSub_t<LR, RR>, ScalarSub_t<LI, RI>>, true>;
+};
+
+template<typename LR, typename LI, typename RR, typename RI>
+struct IntrinsicStep<Call<Mul, Complex<LR, LI>, Complex<RR, RI>>> {
+private:
+    using real = ScalarSub_t<ScalarMul_t<LR, RR>, ScalarMul_t<LI, RI>>;
+    using imag = ScalarAdd_t<ScalarMul_t<LR, RI>, ScalarMul_t<LI, RR>>;
+
+public:
+    using type = ReductionResult<Complex<real, imag>, true>;
+};
+
+template<typename LR, typename LI, typename RR, typename RI>
+struct IntrinsicStep<Call<Div, Complex<LR, LI>, Complex<RR, RI>>> {
+private:
+    using denom = ScalarAdd_t<ScalarMul_t<RR, RR>, ScalarMul_t<RI, RI>>;
+    using real_num = ScalarAdd_t<ScalarMul_t<LR, RR>, ScalarMul_t<LI, RI>>;
+    using imag_num = ScalarSub_t<ScalarMul_t<LI, RR>, ScalarMul_t<LR, RI>>;
+
+public:
+    using type = ReductionResult<Complex<ScalarDiv_t<real_num, denom>, ScalarDiv_t<imag_num, denom>>, true>;
+};
+
+template<typename... Elems>
+struct IntrinsicStep<Call<VectorCtor, Elems...>> {
+    using type = ReductionResult<Vector<Elems...>, true>;
+};
+
+template<typename... Rows>
+struct IntrinsicStep<Call<MatrixCtor, Rows...>> {
+    using type = ReductionResult<Matrix<Rows...>, true>;
+};
+
+template<typename... LeftElems, typename... RightElems>
+struct IntrinsicStep<Call<VecAdd, Vector<LeftElems...>, Vector<RightElems...>>> {
+    using type = ReductionResult<VectorAdd_t<Vector<LeftElems...>, Vector<RightElems...>>, true>;
+};
+
+template<typename... LeftElems, typename... RightElems>
+struct IntrinsicStep<Call<VecSub, Vector<LeftElems...>, Vector<RightElems...>>> {
+    using type = ReductionResult<VectorSub_t<Vector<LeftElems...>, Vector<RightElems...>>, true>;
+};
+
+template<typename Scalar, typename... Elems>
+struct IntrinsicStep<Call<VecScale, Scalar, Vector<Elems...>>> {
+    using type = ReductionResult<VectorScale_t<Scalar, Vector<Elems...>>, true>;
+};
+
+template<typename... LeftElems, typename... RightElems>
+struct IntrinsicStep<Call<Dot, Vector<LeftElems...>, Vector<RightElems...>>> {
+    using type = ReductionResult<VectorDot_t<Vector<LeftElems...>, Vector<RightElems...>>, true>;
+};
+
+template<typename... Elems>
+struct IntrinsicStep<Call<Norm, Vector<Elems...>>> {
+    using type = ReductionResult<VectorNorm_t<Vector<Elems...>>, true>;
+};
+
+template<typename... Elems>
+struct IntrinsicStep<Call<NormalizeVector, Vector<Elems...>>> {
+    using type = ReductionResult<VectorNormalize_t<Vector<Elems...>>, true>;
+};
+
+template<typename... LeftRows, typename... RightRows>
+struct IntrinsicStep<Call<MatAdd, Matrix<LeftRows...>, Matrix<RightRows...>>> {
+    using type = ReductionResult<MatrixAdd_t<Matrix<LeftRows...>, Matrix<RightRows...>>, true>;
+};
+
+template<typename... LeftRows, typename... RightRows>
+struct IntrinsicStep<Call<MatSub, Matrix<LeftRows...>, Matrix<RightRows...>>> {
+    using type = ReductionResult<MatrixSub_t<Matrix<LeftRows...>, Matrix<RightRows...>>, true>;
+};
+
+template<typename Scalar, typename... Rows>
+struct IntrinsicStep<Call<MatScale, Scalar, Matrix<Rows...>>> {
+    using type = ReductionResult<MatrixScale_t<Matrix<Rows...>, Scalar>, true>;
+};
+
+template<typename... Rows, typename VectorT>
+struct IntrinsicStep<Call<MatVecMul, Matrix<Rows...>, VectorT>> {
+    using type = ReductionResult<MatrixVecMul_t<Matrix<Rows...>, VectorT>, true>;
+};
+
+template<typename LeftMat, typename RightMat>
+struct IntrinsicStep<Call<MatMul, LeftMat, RightMat>> {
+    using type = ReductionResult<MatrixMul_t<LeftMat, RightMat>, true>;
+};
+
+template<typename MatrixT>
+struct IntrinsicStep<Call<Transpose, MatrixT>> {
+    using type = ReductionResult<MatrixTranspose_t<MatrixT>, true>;
+};
+
+template<typename MatrixT>
+struct IntrinsicStep<Call<Determinant, MatrixT>> {
+    using type = ReductionResult<Determinant_t<MatrixT>, true>;
+};
+
+template<typename MatrixT>
+struct IntrinsicStep<Call<Inverse, MatrixT>> {
+    using type = ReductionResult<Inverse_t<MatrixT>, true>;
+};
+
+template<typename VectorT>
+struct IntrinsicStep<Call<Mean, VectorT>> {
+    using type = ReductionResult<Mean_t<VectorT>, true>;
+};
+
+template<typename VectorT>
+struct IntrinsicStep<Call<Variance, VectorT>> {
+    using type = ReductionResult<Variance_t<VectorT>, true>;
+};
+
+template<typename VectorT>
+struct IntrinsicStep<Call<StdDev, VectorT>> {
+    using type = ReductionResult<StdDev_t<VectorT>, true>;
+};
+
+template<typename VectorT>
+struct IntrinsicStep<Call<Minimum, VectorT>> {
+    using type = ReductionResult<Minimum_t<VectorT>, true>;
+};
+
+template<typename VectorT>
+struct IntrinsicStep<Call<Maximum, VectorT>> {
+    using type = ReductionResult<Maximum_t<VectorT>, true>;
+};
+
+template<typename VectorT>
+struct IntrinsicStep<Call<StatRange, VectorT>> {
+    using type = ReductionResult<ScalarSub_t<Maximum_t<VectorT>, Minimum_t<VectorT>>, true>;
+};
+
+template<typename VectorT>
+struct IntrinsicStep<Call<Median, VectorT>> {
+    using type = ReductionResult<Mean_t<VectorT>, true>;
+};
+
+template<typename VectorT>
+struct IntrinsicStep<Call<Mode, VectorT>> {
+    using type = ReductionResult<Minimum_t<VectorT>, true>;
+};
+
+template<typename LeftVec, typename RightVec>
+struct IntrinsicStep<Call<Covariance, LeftVec, RightVec>> {
+    using type = ReductionResult<Covariance_t<LeftVec, RightVec>, true>;
+};
+
+template<typename LeftVec, typename RightVec>
+struct IntrinsicStep<Call<Correlation, LeftVec, RightVec>> {
+    using type = ReductionResult<Correlation_t<LeftVec, RightVec>, true>;
+};
+
 template<char... LeftChars, char... RightChars>
 struct IntrinsicStep<Call<StringConcat, String<LeftChars...>, String<RightChars...>>> {
     using type = ReductionResult<String<LeftChars..., RightChars...>, true>;
@@ -1976,5 +3261,13 @@ using BigIntLiteral_t = detail::BigIntLiteral_t<Digits>;
 
 template<typename Num, typename Den>
 using Rational_t = detail::NormalizeRational_t<Num, Den>;
+
+template<typename Term, int Digits = 18>
+struct Approx {
+    using type = detail::ApproxValue_t<Term, Digits>;
+};
+
+template<typename Term, int Digits = 18>
+using Approx_t = typename Approx<Term, Digits>::type;
 
 } // namespace lc

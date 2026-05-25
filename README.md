@@ -2,7 +2,7 @@
 
 This repository is an experiment in treating the C++ type system as a computation engine.
 
-At the center of the project is a small lambda-calculus evaluator built with templates. On top of that core, the library adds pragmatic intrinsic values, a typed Lisp-like front-end, a compile-time reader, a reader-macro expansion stage, local type inference, pretty-printers, and a standard library of algorithms and data operations. The result is a header-only C++20 system that can reduce lambda terms, expand Lisp-like source, evaluate higher-level functional programs, and materialize useful results entirely at compile time.
+At the center of the project is a small lambda-calculus evaluator built with templates. On top of that core, the library adds pragmatic intrinsic values, a typed Lisp-like front-end, a compile-time reader, a reader-macro expansion stage, local type inference, pretty-printers, an exact-and-symbolic math subsystem, and a standard library of algorithms and data operations. The result is a header-only C++20 system that can reduce lambda terms, expand Lisp-like source, evaluate higher-level functional programs, approximate symbolic math when requested, and materialize useful results entirely at compile time.
 
 ## What Lambda Calculus Is
 
@@ -76,25 +76,36 @@ So this is both:
 - Intrinsic compile-time values:
   - `Nat<N>`
   - `Int<N>`
+  - `BigInt<...>`
+  - `Rational<Num, Den>`
+  - `Decimal<...>`
   - `Bool<B>`
+  - `Irrational<Tag>`
+  - `RealExpr<Op, Args...>`
+  - `Complex<Real, Imag>`
   - `String<Chars...>`
   - `List<Ts...>`
   - `Set<Ts...>`
   - `AssocMap<Entries...>`
-- Primitive reducers for arithmetic, comparisons, strings, lists, sets, and maps
+- Dense tensor values:
+  - `Vector<...>`
+  - `Matrix<...>`
+- Primitive reducers for arithmetic, comparisons, strings, lists, sets, maps, symbolic math, linear algebra, and statistics
 - A typed Lisp-like AST with environments, closures, top-level program forms, and typechecking
 - A compile-time reader from source strings to Lisp AST, plus staged source expansion
 - Reader-level syntactic forms such as `define`, `cond`, and `list`
 - Local bidirectional-style inference through `InferType`
 - Pretty-printers for values, types, lambda terms, Lisp forms, and errors
+- Explicit approximation and metric surfaces such as `Approx_t<T, Digits>`, `ReadScriptApprox_t<...>`, and `NormalizeWithStats_t<...>`
 - A standard library with combinators and example algorithms
+- Script-backed source examples under `scripts/` that are converted into generated compile-time headers
 - Runtime bridge helpers so compile-time results can be printed from ordinary C++
 
 ## System Architecture
 
 ```mermaid
 flowchart TD
-    A[Source String<br/>ReadSource_t] --> B[Reader Layer<br/>reader.hpp]
+    A[Source String / Script File<br/>ReadSource_t ReadScript_t] --> B[Reader Layer<br/>reader.hpp]
     B --> C[S-Expression AST<br/>SSymbol SList SInt SStringLit SProgram]
     C --> X[Expansion Stage<br/>ExpandSource_t]
     X --> D[Lisp Front-End<br/>lisp.hpp]
@@ -103,15 +114,20 @@ flowchart TD
     F --> G[Core Lambda / Hybrid Terms<br/>core.hpp]
     G --> H[Reducer<br/>eval.hpp]
     H --> I[Primitive Intrinsics<br/>intrinsics.hpp]
-    I --> J[Normalized Compile-Time Values<br/>Nat Int Bool String List Set AssocMap]
+    I --> J[Normalized Compile-Time Values<br/>Nat Int BigInt Rational Decimal Bool RealExpr Complex Vector Matrix String List Set AssocMap]
+    I --> MATH[Math Subsystem<br/>Trig Exp Log Linear Algebra Statistics]
+    MATH --> J
     J --> K[Pretty Printers<br/>pretty.hpp]
     J --> L[Runtime Bridge<br/>runtime.hpp]
+    J --> AP[Approximation Layer<br/>Approx_t ReadScriptApprox_t]
     M[Named Surface Syntax<br/>var lam app free] --> G
     N[Standard Library<br/>std.hpp] --> D
     N --> G
     N --> I
+    S[scripts/*.lisp<br/>generated/lc/*.hpp] --> A
     L --> O[main.cpp Demo Output]
     K --> O
+    AP --> O
 ```
 
 ## Layer By Layer
@@ -138,10 +154,13 @@ So this library introduces compact value forms:
 
 - `Nat<5>` instead of a huge Church numeral
 - `Int<-3>` for signed arithmetic
+- `BigInt<...>` for large exact integers
+- `Rational<...>` for exact division
+- `Irrational<pi_tag>` and `RealExpr<...>` for symbolic math
 - `String<'o', 'k'>` for compile-time text
 - `List<...>`, `Set<...>`, and `AssocMap<...>` for structured data
 
-Primitive heads such as `Add`, `Mul`, `Range`, `Map`, `StringConcat`, `SetUnion`, and `MapFind` reduce directly when given intrinsic values.
+Primitive heads such as `Add`, `Mul`, `Range`, `Map`, `StringConcat`, `SetUnion`, `MapFind`, `Sin`, `Exp`, `Dot`, `MatMul`, and `Mean` reduce directly when given intrinsic values.
 
 This is the main optimization strategy of the project: still compute through symbolic reduction, but keep the data representation compact enough to survive real compile-time workloads.
 
@@ -222,8 +241,14 @@ Because type-level systems are hard to inspect, the library includes:
 - `to_int_v<T>`
 - `to_bool_v<T>`
 - `to_string_view_v<T>`
+- `to_bigint_string_view_v<T>`
+- `to_rational_string_view_v<T>`
+- `to_decimal_string_view_v<T>`
 - `to_array_v<T>`
 - `to_matrix_v<T>`
+- `reduction_count_v<T>`
+- `node_count_v<T>`
+- `approximation_count_v<T>`
 
 These make the compile-time world observable enough to debug and demo.
 
@@ -239,6 +264,9 @@ include/lc/reader.hpp     Compile-time reader, top-level forms, and source expan
 include/lc/pretty.hpp     Pretty-printers for terms, values, types, and errors
 include/lc/std.hpp        Standard library and example programs
 include/lc/runtime.hpp    Runtime bridge for compile-time values
+scripts/*.lisp            Script-backed Lisp examples
+generated/lc/*.hpp        Generated compile-time source headers
+demo/demo.cpp             Demo runner and printing layer
 main.cpp                  Demo program
 tests.cpp                 Static-assert based test suite
 Makefile                  Clang-oriented build targets
@@ -258,6 +286,15 @@ The library surface is intentionally broad because the point is to explore what 
 - `C`
 - `W`
 - `Y`
+
+### Math
+
+- symbolic constants such as `Pi`, `E`, and `Tau`
+- `Sqrt`, `Exp`, `Log`, `Sin`, `Cos`, `Tan`, `Asin`, `Acos`, `Atan`
+- `Approx_t<T, Digits>` for explicit decimal approximation
+- `Complex<...>` arithmetic
+- `Vector<...>` and `Matrix<...>` algebra
+- `Mean`, `Median`, `Mode`, `Variance`, `StdDev`, `Minimum`, `Maximum`, `StatRange`, `Covariance`, `Correlation`
 
 ### Booleans and control
 

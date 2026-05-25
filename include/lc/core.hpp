@@ -21,6 +21,7 @@ struct fixed_string {
 };
 
 inline constexpr std::size_t bigint_capacity = 256;
+inline constexpr std::size_t decimal_capacity = 128;
 
 struct bigint_storage {
     bool negative = false;
@@ -28,6 +29,15 @@ struct bigint_storage {
     char digits[bigint_capacity] = {'0'};
 
     constexpr bool operator==(const bigint_storage&) const = default;
+};
+
+struct decimal_storage {
+    bool negative = false;
+    int scale = 0;
+    std::size_t size = 1;
+    char digits[decimal_capacity] = {'0'};
+
+    constexpr bool operator==(const decimal_storage&) const = default;
 };
 
 template<bool Cond, typename Then, typename Else>
@@ -109,6 +119,11 @@ struct BigInt {
     inline static constexpr auto storage = Storage;
 };
 
+template<auto Storage>
+struct Decimal {
+    inline static constexpr auto storage = Storage;
+};
+
 template<bool B>
 struct Bool {
     static constexpr bool value = B;
@@ -119,6 +134,28 @@ struct Rational {
     using numerator = Numerator;
     using denominator = Denominator;
 };
+
+template<typename Tag>
+struct Irrational {};
+
+template<typename Op, typename... Args>
+struct RealExpr {};
+
+template<typename Real, typename Imag>
+struct Complex {
+    using real = Real;
+    using imag = Imag;
+};
+
+template<typename... Elems>
+struct Vector {};
+
+template<typename... Rows>
+struct Matrix {};
+
+struct pi_tag {};
+struct e_tag {};
+struct tau_tag {};
 
 template<char... Chars>
 struct String {};
@@ -139,6 +176,14 @@ template<typename... Entries>
 struct AssocMap {};
 
 struct None {};
+
+template<typename Value, int Reductions, int Nodes = 0, int Approximations = 0>
+struct ComputationStats {
+    using value = Value;
+    static constexpr int reductions = Reductions;
+    static constexpr int nodes = Nodes;
+    static constexpr int approximations = Approximations;
+};
 
 template<typename... Terms>
 struct Apply;
@@ -214,10 +259,16 @@ template<typename Term, int Fuel = 256, typename Seen = TypeList<>>
 struct NormalizeChecked;
 
 template<typename Term, int Fuel = 256>
+struct NormalizeWithStats;
+
+template<typename Term, int Fuel = 256>
 using Normalize_t = typename Normalize<Term, Fuel>::type;
 
 template<typename Term, int Fuel = 256>
 using NormalizeChecked_t = typename NormalizeChecked<Term, Fuel>::type;
+
+template<typename Term, int Fuel = 256>
+using NormalizeWithStats_t = typename NormalizeWithStats<Term, Fuel>::type;
 
 template<typename Name>
 struct var {};

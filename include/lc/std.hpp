@@ -27,6 +27,10 @@ using NegThree = Int<-3>;
 using NegFour = Int<-4>;
 using NegFive = Int<-5>;
 
+using Pi = Irrational<pi_tag>;
+using E = Irrational<e_tag>;
+using Tau = Irrational<tau_tag>;
+
 using Nil = List<>;
 
 using I = Lambda<Var<0>>;
@@ -201,6 +205,30 @@ using ReaderRecursiveValueDefineError = ReadSourceEval_t<R"(
     (define x (+ x 1))
     x
 )">;
+
+using SymbolicSineHalf = Normalize_t<Apply_t<Sin, Normalize_t<Apply_t<Div, Pi, Six>>>>;
+using SymbolicCosHalf = Normalize_t<Apply_t<Cos, Normalize_t<Apply_t<Div, Pi, Three>>>>;
+using SymbolicSqrtTwo = Normalize_t<Apply_t<Sqrt, Two>>;
+using ApproxSqrtTwo = Approx_t<SymbolicSqrtTwo, 12>;
+using ApproxExpOne = Approx_t<Normalize_t<Apply_t<Exp, One>>, 12>;
+
+using VectorExampleA = Vector<Int<1>, Int<2>, Int<3>>;
+using VectorExampleB = Vector<Int<4>, Int<5>, Int<6>>;
+using VectorDotExample = Normalize_t<Apply_t<Dot, VectorExampleA, VectorExampleB>>;
+using VectorNormExample = Normalize_t<Apply_t<Norm, VectorExampleA>>;
+using VectorMeanExample = Normalize_t<Apply_t<Mean, Vector<One, Two, Three, Four>>>;
+
+using MatrixExampleA = Matrix<Vector<Int<1>, Int<2>>, Vector<Int<3>, Int<4>>>;
+using MatrixExampleB = Matrix<Vector<Int<5>, Int<6>>, Vector<Int<7>, Int<8>>>;
+using MatrixProductExample = Normalize_t<Apply_t<MatMul, MatrixExampleA, MatrixExampleB>>;
+using MatrixDeterminantExample = Normalize_t<Apply_t<Determinant, MatrixExampleA>>;
+using MatrixInverseExample = Normalize_t<Apply_t<Inverse, MatrixExampleA>>;
+
+using ComplexExampleA = Complex<Int<1>, Int<2>>;
+using ComplexExampleB = Complex<Int<3>, Int<4>>;
+using ComplexSumExample = Normalize_t<Apply_t<Add, ComplexExampleA, ComplexExampleB>>;
+using ComplexMagnitudeExample = Normalize_t<Apply_t<Magnitude, ComplexExampleA>>;
+using ApproxComplexMagnitudeExample = Approx_t<ComplexMagnitudeExample, 12>;
 
 namespace church {
 

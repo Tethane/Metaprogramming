@@ -984,6 +984,46 @@ template<> struct PrimitiveOf<String<'m', 'a', 'p', '-', 'f', 'i', 'n', 'd'> > {
 template<> struct PrimitiveOf<String<'m', 'a', 'p', '-', 'c', 'o', 'n', 't', 'a', 'i', 'n', 's', '?'> > { using type = MapContainsKey; };
 template<> struct PrimitiveOf<String<'m', 'a', 'p', '-', 'e', 'r', 'a', 's', 'e'> > { using type = MapErase; };
 template<> struct PrimitiveOf<String<'m', 'a', 'p', '-', 's', 'i', 'z', 'e'> > { using type = MapSize; };
+template<> struct PrimitiveOf<String<'s', 'q', 'r', 't'> > { using type = Sqrt; };
+template<> struct PrimitiveOf<String<'e', 'x', 'p'> > { using type = Exp; };
+template<> struct PrimitiveOf<String<'l', 'o', 'g'> > { using type = Log; };
+template<> struct PrimitiveOf<String<'s', 'i', 'n'> > { using type = Sin; };
+template<> struct PrimitiveOf<String<'c', 'o', 's'> > { using type = Cos; };
+template<> struct PrimitiveOf<String<'t', 'a', 'n'> > { using type = Tan; };
+template<> struct PrimitiveOf<String<'a', 's', 'i', 'n'> > { using type = Asin; };
+template<> struct PrimitiveOf<String<'a', 'c', 'o', 's'> > { using type = Acos; };
+template<> struct PrimitiveOf<String<'a', 't', 'a', 'n'> > { using type = Atan; };
+template<> struct PrimitiveOf<String<'v', 'e', 'c', 't', 'o', 'r'> > { using type = VectorCtor; };
+template<> struct PrimitiveOf<String<'m', 'a', 't', 'r', 'i', 'x'> > { using type = MatrixCtor; };
+template<> struct PrimitiveOf<String<'c', 'o', 'm', 'p', 'l', 'e', 'x'> > { using type = ComplexCtor; };
+template<> struct PrimitiveOf<String<'v', 'e', 'c', '-', 'a', 'd', 'd'> > { using type = VecAdd; };
+template<> struct PrimitiveOf<String<'v', 'e', 'c', '-', 's', 'u', 'b'> > { using type = VecSub; };
+template<> struct PrimitiveOf<String<'v', 'e', 'c', '-', 's', 'c', 'a', 'l', 'e'> > { using type = VecScale; };
+template<> struct PrimitiveOf<String<'d', 'o', 't'> > { using type = Dot; };
+template<> struct PrimitiveOf<String<'n', 'o', 'r', 'm'> > { using type = Norm; };
+template<> struct PrimitiveOf<String<'n', 'o', 'r', 'm', 'a', 'l', 'i', 'z', 'e'> > { using type = NormalizeVector; };
+template<> struct PrimitiveOf<String<'m', 'a', 't', '-', 'a', 'd', 'd'> > { using type = MatAdd; };
+template<> struct PrimitiveOf<String<'m', 'a', 't', '-', 's', 'u', 'b'> > { using type = MatSub; };
+template<> struct PrimitiveOf<String<'m', 'a', 't', '-', 's', 'c', 'a', 'l', 'e'> > { using type = MatScale; };
+template<> struct PrimitiveOf<String<'m', 'a', 't', '-', 'v', 'e', 'c', '-', 'm', 'u', 'l'> > { using type = MatVecMul; };
+template<> struct PrimitiveOf<String<'m', 'a', 't', '-', 'm', 'u', 'l'> > { using type = MatMul; };
+template<> struct PrimitiveOf<String<'t', 'r', 'a', 'n', 's', 'p', 'o', 's', 'e'> > { using type = Transpose; };
+template<> struct PrimitiveOf<String<'d', 'e', 't'> > { using type = Determinant; };
+template<> struct PrimitiveOf<String<'i', 'n', 'v', 'e', 'r', 's', 'e'> > { using type = Inverse; };
+template<> struct PrimitiveOf<String<'c', 'o', 'n', 'j', 'u', 'g', 'a', 't', 'e'> > { using type = Conjugate; };
+template<> struct PrimitiveOf<String<'n', 'o', 'r', 'm', '-', 's', 'q', 'u', 'a', 'r', 'e', 'd'> > { using type = NormSquared; };
+template<> struct PrimitiveOf<String<'m', 'a', 'g', 'n', 'i', 't', 'u', 'd', 'e'> > { using type = Magnitude; };
+template<> struct PrimitiveOf<String<'a', 'r', 'g', 'u', 'm', 'e', 'n', 't'> > { using type = Argument; };
+template<> struct PrimitiveOf<String<'m', 'e', 'a', 'n'> > { using type = Mean; };
+template<> struct PrimitiveOf<String<'m', 'e', 'd', 'i', 'a', 'n'> > { using type = Median; };
+template<> struct PrimitiveOf<String<'m', 'o', 'd', 'e'> > { using type = Mode; };
+template<> struct PrimitiveOf<String<'v', 'a', 'r', 'i', 'a', 'n', 'c', 'e'> > { using type = Variance; };
+template<> struct PrimitiveOf<String<'s', 't', 'd', 'd', 'e', 'v'> > { using type = StdDev; };
+template<> struct PrimitiveOf<String<'m', 'i', 'n'> > { using type = Minimum; };
+template<> struct PrimitiveOf<String<'m', 'a', 'x'> > { using type = Maximum; };
+template<> struct PrimitiveOf<String<'r', 'a', 'n', 'g', 'e'> > { using type = StatRange; };
+template<> struct PrimitiveOf<String<'c', 'o', 'v', 'a', 'r', 'i', 'a', 'n', 'c', 'e'> > { using type = Covariance; };
+template<> struct PrimitiveOf<String<'c', 'o', 'r', 'r', 'e', 'l', 'a', 't', 'i', 'o', 'n'> > { using type = Correlation; };
 
 template<typename Name>
 using PrimitiveOf_t = typename PrimitiveOf<Name>::type;
@@ -1213,6 +1253,16 @@ struct LowerType<SSymbol<String<'B', 'i', 'g', 'I', 'n', 't'>>> {
 template<>
 struct LowerType<SSymbol<String<'R', 'a', 't', 'i', 'o', 'n', 'a', 'l'>>> {
     using type = RationalType;
+};
+
+template<>
+struct LowerType<SSymbol<String<'D', 'e', 'c', 'i', 'm', 'a', 'l'>>> {
+    using type = DecimalType;
+};
+
+template<>
+struct LowerType<SSymbol<String<'R', 'e', 'a', 'l'>>> {
+    using type = RealType;
 };
 
 template<>
@@ -1479,6 +1529,15 @@ private:
 
 public:
     using type = IfType_t<
+        IsSame<Name, String<'p', 'i'>>::value,
+        Irrational<pi_tag>,
+        IfType_t<
+            IsSame<Name, String<'e'>>::value,
+            Irrational<e_tag>,
+            IfType_t<
+                IsSame<Name, String<'t', 'a', 'u'>>::value,
+                Irrational<tau_tag>,
+                IfType_t<
         IsSame<Name, nil_label>::value,
         List<>,
         IfType_t<
@@ -1488,6 +1547,9 @@ public:
                 IsSame<primitive, void>::value,
                 Ref<Symbol<Name>>,
                 primitive
+            >
+        >
+                >
             >
         >
     >;
@@ -1844,5 +1906,16 @@ using TypeCheckScript_t = ReadSourceTypeCheck_t<Source>;
 
 template<fixed_string Source>
 using ExpandScript_t = ExpandSource_t<Source>;
+
+template<fixed_string Source, int Digits = 18>
+using ReadScriptApprox_t = Approx_t<EvalScript_t<Source>, Digits>;
+
+template<fixed_string Source>
+using EvalScriptWithStats_t = ComputationStats<
+    EvalScript_t<Source>,
+    0,
+    TermNodeCount<OptimizeLisp_t<ReadScript_t<Source>>>::value,
+    0
+>;
 
 } // namespace lc

@@ -73,12 +73,23 @@ struct NatType {};
 struct IntType {};
 struct BigIntType {};
 struct RationalType {};
+struct DecimalType {};
+struct RealType {};
 struct BoolType {};
 struct StringType {};
 struct NoneType {};
 struct AnyType {};
 struct UnknownType {};
 struct InferType {};
+
+template<typename Elem>
+struct ComplexType {};
+
+template<typename Elem, std::size_t N>
+struct VectorType {};
+
+template<typename Elem, std::size_t Rows, std::size_t Cols>
+struct MatrixType {};
 
 template<typename Elem>
 struct ListType {};
@@ -187,6 +198,46 @@ template<> struct IsPrimitiveTag<MapFind> : std::true_type {};
 template<> struct IsPrimitiveTag<MapContainsKey> : std::true_type {};
 template<> struct IsPrimitiveTag<MapErase> : std::true_type {};
 template<> struct IsPrimitiveTag<MapSize> : std::true_type {};
+template<> struct IsPrimitiveTag<Sqrt> : std::true_type {};
+template<> struct IsPrimitiveTag<Exp> : std::true_type {};
+template<> struct IsPrimitiveTag<Log> : std::true_type {};
+template<> struct IsPrimitiveTag<Sin> : std::true_type {};
+template<> struct IsPrimitiveTag<Cos> : std::true_type {};
+template<> struct IsPrimitiveTag<Tan> : std::true_type {};
+template<> struct IsPrimitiveTag<Asin> : std::true_type {};
+template<> struct IsPrimitiveTag<Acos> : std::true_type {};
+template<> struct IsPrimitiveTag<Atan> : std::true_type {};
+template<> struct IsPrimitiveTag<VectorCtor> : std::true_type {};
+template<> struct IsPrimitiveTag<MatrixCtor> : std::true_type {};
+template<> struct IsPrimitiveTag<ComplexCtor> : std::true_type {};
+template<> struct IsPrimitiveTag<VecAdd> : std::true_type {};
+template<> struct IsPrimitiveTag<VecSub> : std::true_type {};
+template<> struct IsPrimitiveTag<VecScale> : std::true_type {};
+template<> struct IsPrimitiveTag<Dot> : std::true_type {};
+template<> struct IsPrimitiveTag<Norm> : std::true_type {};
+template<> struct IsPrimitiveTag<NormalizeVector> : std::true_type {};
+template<> struct IsPrimitiveTag<MatAdd> : std::true_type {};
+template<> struct IsPrimitiveTag<MatSub> : std::true_type {};
+template<> struct IsPrimitiveTag<MatScale> : std::true_type {};
+template<> struct IsPrimitiveTag<MatVecMul> : std::true_type {};
+template<> struct IsPrimitiveTag<MatMul> : std::true_type {};
+template<> struct IsPrimitiveTag<Transpose> : std::true_type {};
+template<> struct IsPrimitiveTag<Determinant> : std::true_type {};
+template<> struct IsPrimitiveTag<Inverse> : std::true_type {};
+template<> struct IsPrimitiveTag<Conjugate> : std::true_type {};
+template<> struct IsPrimitiveTag<NormSquared> : std::true_type {};
+template<> struct IsPrimitiveTag<Magnitude> : std::true_type {};
+template<> struct IsPrimitiveTag<Argument> : std::true_type {};
+template<> struct IsPrimitiveTag<Mean> : std::true_type {};
+template<> struct IsPrimitiveTag<Median> : std::true_type {};
+template<> struct IsPrimitiveTag<Mode> : std::true_type {};
+template<> struct IsPrimitiveTag<Variance> : std::true_type {};
+template<> struct IsPrimitiveTag<StdDev> : std::true_type {};
+template<> struct IsPrimitiveTag<Minimum> : std::true_type {};
+template<> struct IsPrimitiveTag<Maximum> : std::true_type {};
+template<> struct IsPrimitiveTag<StatRange> : std::true_type {};
+template<> struct IsPrimitiveTag<Covariance> : std::true_type {};
+template<> struct IsPrimitiveTag<Correlation> : std::true_type {};
 
 template<typename T>
 struct IsInferMarker : std::false_type {};
@@ -224,9 +275,29 @@ struct ValueStaticType<Rational<Num, Den>> {
     using type = RationalType;
 };
 
+template<auto Storage>
+struct ValueStaticType<Decimal<Storage>> {
+    using type = DecimalType;
+};
+
+template<typename Tag>
+struct ValueStaticType<Irrational<Tag>> {
+    using type = RealType;
+};
+
+template<typename Op, typename... Args>
+struct ValueStaticType<RealExpr<Op, Args...>> {
+    using type = RealType;
+};
+
 template<char... Chars>
 struct ValueStaticType<String<Chars...>> {
     using type = StringType;
+};
+
+template<typename Real, typename Imag>
+struct ValueStaticType<Complex<Real, Imag>> {
+    using type = ComplexType<typename ValueStaticType<Real>::type>;
 };
 
 template<>
@@ -272,6 +343,29 @@ public:
 template<typename... Items>
 struct ValueStaticType<List<Items...>> {
     using type = typename InferListType<Items...>::type;
+};
+
+template<typename... Items>
+struct InferVectorType {
+    using type = VectorType<AnyType, sizeof...(Items)>;
+};
+
+template<typename First, typename... Rest>
+struct InferVectorType<First, Rest...> {
+private:
+    using elem_type = typename ValueStaticType<First>::type;
+
+public:
+    using type = IfType_t<
+        AllValueTypesMatch<elem_type, Rest...>::value,
+        VectorType<elem_type, 1 + sizeof...(Rest)>,
+        TypeError<msg_heterogeneous_list>
+    >;
+};
+
+template<typename... Items>
+struct ValueStaticType<Vector<Items...>> {
+    using type = typename InferVectorType<Items...>::type;
 };
 
 template<typename... Items>
@@ -341,6 +435,49 @@ public:
 template<typename... Entries>
 struct ValueStaticType<AssocMap<Entries...>> {
     using type = typename InferMapType<Entries...>::type;
+};
+
+template<typename Row>
+struct MatrixRowType;
+
+template<typename Elem, std::size_t Cols>
+struct MatrixRowType<VectorType<Elem, Cols>> {
+    using elem = Elem;
+    static constexpr std::size_t cols = Cols;
+};
+
+template<typename... Rows>
+struct InferMatrixType {
+    using type = MatrixType<AnyType, sizeof...(Rows), 0>;
+};
+
+template<typename FirstRow, typename... RestRows>
+struct InferMatrixType<FirstRow, RestRows...> {
+private:
+    using first_type = typename ValueStaticType<FirstRow>::type;
+    using elem_type = typename MatrixRowType<first_type>::elem;
+    static constexpr std::size_t cols = MatrixRowType<first_type>::cols;
+
+    template<typename... Remaining>
+    struct RowsMatch : std::true_type {};
+
+    template<typename Current, typename... Remaining>
+    struct RowsMatch<Current, Remaining...>
+        : std::bool_constant<
+              IsSame<typename ValueStaticType<Current>::type, VectorType<elem_type, cols>>::value &&
+              RowsMatch<Remaining...>::value> {};
+
+public:
+    using type = IfType_t<
+        RowsMatch<RestRows...>::value,
+        MatrixType<elem_type, 1 + sizeof...(RestRows), cols>,
+        TypeError<msg_heterogeneous_list>
+    >;
+};
+
+template<typename... Rows>
+struct ValueStaticType<Matrix<Rows...>> {
+    using type = typename InferMatrixType<Rows...>::type;
 };
 
 template<typename T>
@@ -558,6 +695,57 @@ struct OptimizeLisp {
 template<typename Expr>
 using OptimizeLisp_t = typename OptimizeLisp<Expr>::type;
 
+template<typename Expr>
+struct TermNodeCount<ExprForm<Expr>> : std::integral_constant<int, 1 + TermNodeCount<Expr>::value> {};
+
+template<typename Name, typename Expr>
+struct TermNodeCount<DefineForm<Name, Expr>> : std::integral_constant<int, 1 + TermNodeCount<Name>::value + TermNodeCount<Expr>::value> {};
+
+template<typename... Forms>
+struct TermNodeCount<ProgramExpr<Forms...>> : std::integral_constant<int, 1 + (0 + ... + TermNodeCount<Forms>::value)> {};
+
+template<typename Name, typename Type>
+struct TermNodeCount<Param<Name, Type>> : std::integral_constant<int, 1 + TermNodeCount<Name>::value + TermNodeCount<Type>::value> {};
+
+template<typename... ParamsT>
+struct TermNodeCount<Params<ParamsT...>> : std::integral_constant<int, 1 + (0 + ... + TermNodeCount<ParamsT>::value)> {};
+
+template<typename ParamsT, typename Body>
+struct TermNodeCount<LambdaExpr<ParamsT, Body>> : std::integral_constant<int, 1 + TermNodeCount<ParamsT>::value + TermNodeCount<Body>::value> {};
+
+template<typename FnExpr, typename... ArgExprs>
+struct TermNodeCount<CallExpr<FnExpr, ArgExprs...>>
+    : std::integral_constant<int, 1 + TermNodeCount<FnExpr>::value + (0 + ... + TermNodeCount<ArgExprs>::value)> {};
+
+template<typename Cond, typename ThenExpr, typename ElseExpr>
+struct TermNodeCount<IfExpr<Cond, ThenExpr, ElseExpr>>
+    : std::integral_constant<int, 1 + TermNodeCount<Cond>::value + TermNodeCount<ThenExpr>::value + TermNodeCount<ElseExpr>::value> {};
+
+template<typename Name, typename Expr>
+struct TermNodeCount<Binding<Name, Expr>> : std::integral_constant<int, 1 + TermNodeCount<Name>::value + TermNodeCount<Expr>::value> {};
+
+template<typename... BindingsT>
+struct TermNodeCount<Bindings<BindingsT...>> : std::integral_constant<int, 1 + (0 + ... + TermNodeCount<BindingsT>::value)> {};
+
+template<typename BindingsT, typename Body>
+struct TermNodeCount<LetExpr<BindingsT, Body>> : std::integral_constant<int, 1 + TermNodeCount<BindingsT>::value + TermNodeCount<Body>::value> {};
+
+template<typename... Exprs>
+struct TermNodeCount<BeginExpr<Exprs...>> : std::integral_constant<int, 1 + (0 + ... + TermNodeCount<Exprs>::value)> {};
+
+template<typename ParamsT, typename Body, typename Env>
+struct TermNodeCount<Closure<ParamsT, Body, Env>> : std::integral_constant<int, 1 + TermNodeCount<ParamsT>::value + TermNodeCount<Body>::value> {};
+
+template<typename Name, typename ParamsT, typename Body, typename Env>
+struct TermNodeCount<RecursiveClosure<Name, ParamsT, Body, Env>>
+    : std::integral_constant<int, 1 + TermNodeCount<Name>::value + TermNodeCount<ParamsT>::value + TermNodeCount<Body>::value> {};
+
+template<typename Frame, typename Inner>
+struct TermNodeCount<ErrorContext<Frame, Inner>> : std::integral_constant<int, 1 + TermNodeCount<Frame>::value + TermNodeCount<Inner>::value> {};
+
+template<typename Label, typename Detail>
+struct TermNodeCount<ErrorFrame<Label, Detail>> : std::integral_constant<int, 1 + TermNodeCount<Label>::value + TermNodeCount<Detail>::value> {};
+
 template<typename T>
 struct IsImmediateValue : std::false_type {};
 
@@ -573,6 +761,18 @@ struct IsImmediateValue<BigInt<Storage>> : std::true_type {};
 template<typename Num, typename Den>
 struct IsImmediateValue<Rational<Num, Den>> : std::true_type {};
 
+template<auto Storage>
+struct IsImmediateValue<Decimal<Storage>> : std::true_type {};
+
+template<typename Tag>
+struct IsImmediateValue<Irrational<Tag>> : std::true_type {};
+
+template<typename Op, typename... Args>
+struct IsImmediateValue<RealExpr<Op, Args...>> : std::true_type {};
+
+template<typename Real, typename Imag>
+struct IsImmediateValue<Complex<Real, Imag>> : std::true_type {};
+
 template<bool B>
 struct IsImmediateValue<Bool<B>> : std::true_type {};
 
@@ -587,6 +787,12 @@ struct IsImmediateValue<Set<Items...>> : std::true_type {};
 
 template<typename... Entries>
 struct IsImmediateValue<AssocMap<Entries...>> : std::true_type {};
+
+template<typename... Elems>
+struct IsImmediateValue<Vector<Elems...>> : std::true_type {};
+
+template<typename... Rows>
+struct IsImmediateValue<Matrix<Rows...>> : std::true_type {};
 
 template<>
 struct IsImmediateValue<None> : std::true_type {};
@@ -1152,18 +1358,32 @@ struct IsNumericType : IsIntegerNumericType<T> {};
 template<>
 struct IsNumericType<RationalType> : std::true_type {};
 
+template<>
+struct IsNumericType<DecimalType> : std::true_type {};
+
+template<>
+struct IsNumericType<RealType> : std::true_type {};
+
 template<typename Left, typename Right>
 struct AdditiveNumericType {
     using type = IfType_t<
-        IsSame<Left, RationalType>::value || IsSame<Right, RationalType>::value,
-        RationalType,
+        IsSame<Left, RealType>::value || IsSame<Right, RealType>::value,
+        RealType,
         IfType_t<
-            IsSame<Left, BigIntType>::value || IsSame<Right, BigIntType>::value,
-            BigIntType,
+            IsSame<Left, DecimalType>::value || IsSame<Right, DecimalType>::value,
+            DecimalType,
             IfType_t<
-                IsSame<Left, IntType>::value || IsSame<Right, IntType>::value,
-                IntType,
-                NatType
+                IsSame<Left, RationalType>::value || IsSame<Right, RationalType>::value,
+                RationalType,
+                IfType_t<
+                    IsSame<Left, BigIntType>::value || IsSame<Right, BigIntType>::value,
+                    BigIntType,
+                    IfType_t<
+                        IsSame<Left, IntType>::value || IsSame<Right, IntType>::value,
+                        IntType,
+                        NatType
+                    >
+                >
             >
         >
     >;
@@ -1175,6 +1395,106 @@ using AdditiveNumericType_t = typename AdditiveNumericType<Left, Right>::type;
 template<typename Left, typename Right>
 struct ComparableNumericTypes
     : std::bool_constant<IsNumericType<Left>::value && IsNumericType<Right>::value> {};
+
+template<typename Left, typename Right>
+struct CombineValueTypes {
+    using type = IfType_t<
+        IsSame<Left, InferType>::value,
+        Right,
+        IfType_t<
+            IsSame<Right, InferType>::value,
+            Left,
+            IfType_t<
+                IsSame<Left, Right>::value,
+                Left,
+                IfType_t<
+                    IsNumericType<Left>::value && IsNumericType<Right>::value,
+                    AdditiveNumericType_t<Left, Right>,
+                    TypeError<msg_call_type_error>
+                >
+            >
+        >
+    >;
+};
+
+template<typename Left, typename Right>
+using CombineValueTypes_t = typename CombineValueTypes<Left, Right>::type;
+
+template<typename... Ts>
+struct CommonValueType;
+
+template<>
+struct CommonValueType<> {
+    using type = AnyType;
+};
+
+template<typename T>
+struct CommonValueType<T> {
+    using type = T;
+};
+
+template<typename Left, typename Right, typename... Rest>
+struct CommonValueType<Left, Right, Rest...> {
+private:
+    using combined = CombineValueTypes_t<Left, Right>;
+
+public:
+    using type = IfType_t<
+        IsTypeError<combined>::value,
+        combined,
+        typename CommonValueType<combined, Rest...>::type
+    >;
+};
+
+template<typename... Ts>
+using CommonValueType_t = typename CommonValueType<Ts...>::type;
+
+template<typename T>
+struct MeanResultType {
+    using type = IfType_t<
+        IsSame<T, RealType>::value,
+        RealType,
+        IfType_t<
+            IsSame<T, DecimalType>::value,
+            DecimalType,
+            RationalType
+        >
+    >;
+};
+
+template<typename T>
+using MeanResultType_t = typename MeanResultType<T>::type;
+
+template<typename... RowTypes>
+struct CommonMatrixType {
+    using type = TypeError<msg_call_type_error>;
+};
+
+template<typename Elem, std::size_t Cols>
+struct CommonMatrixType<VectorType<Elem, Cols>> {
+    using type = MatrixType<Elem, 1, Cols>;
+};
+
+template<typename Elem, std::size_t Cols, typename... RestRows>
+struct CommonMatrixType<VectorType<Elem, Cols>, RestRows...> {
+private:
+    template<typename... Rows>
+    struct RowsMatch : std::false_type {};
+
+    template<typename FirstRow>
+    struct RowsMatch<FirstRow> : std::true_type {};
+
+    template<typename FirstRow, typename NextRow, typename... TailRows>
+    struct RowsMatch<FirstRow, NextRow, TailRows...>
+        : std::bool_constant<IsSame<FirstRow, NextRow>::value && RowsMatch<NextRow, TailRows...>::value> {};
+
+public:
+    using type = IfType_t<
+        RowsMatch<VectorType<Elem, Cols>, RestRows...>::value,
+        MatrixType<Elem, 1 + sizeof...(RestRows), Cols>,
+        TypeError<msg_call_type_error>
+    >;
+};
 
 template<typename ParamsT, typename ReturnType, typename... ArgTypes>
 struct TypeApply<FunctionType<ParamsT, ReturnType>, TypePack<ArgTypes...>> {
@@ -1310,6 +1630,60 @@ template<typename Arg>
     requires (IsNumericType<Arg>::value)
 struct TypeApply<PrimitiveType<Abs>, TypePack<Arg>> {
     using type = Arg;
+};
+
+template<typename Arg>
+    requires (IsNumericType<Arg>::value)
+struct TypeApply<PrimitiveType<Sqrt>, TypePack<Arg>> {
+    using type = RealType;
+};
+
+template<typename Arg>
+    requires (IsNumericType<Arg>::value || IsSame<Arg, RealType>::value)
+struct TypeApply<PrimitiveType<Exp>, TypePack<Arg>> {
+    using type = RealType;
+};
+
+template<typename Arg>
+    requires (IsNumericType<Arg>::value || IsSame<Arg, RealType>::value)
+struct TypeApply<PrimitiveType<Log>, TypePack<Arg>> {
+    using type = RealType;
+};
+
+template<typename Arg>
+    requires (IsNumericType<Arg>::value || IsSame<Arg, RealType>::value)
+struct TypeApply<PrimitiveType<Sin>, TypePack<Arg>> {
+    using type = RealType;
+};
+
+template<typename Arg>
+    requires (IsNumericType<Arg>::value || IsSame<Arg, RealType>::value)
+struct TypeApply<PrimitiveType<Cos>, TypePack<Arg>> {
+    using type = RealType;
+};
+
+template<typename Arg>
+    requires (IsNumericType<Arg>::value || IsSame<Arg, RealType>::value)
+struct TypeApply<PrimitiveType<Tan>, TypePack<Arg>> {
+    using type = RealType;
+};
+
+template<typename Arg>
+    requires (IsNumericType<Arg>::value || IsSame<Arg, RealType>::value)
+struct TypeApply<PrimitiveType<Asin>, TypePack<Arg>> {
+    using type = RealType;
+};
+
+template<typename Arg>
+    requires (IsNumericType<Arg>::value || IsSame<Arg, RealType>::value)
+struct TypeApply<PrimitiveType<Acos>, TypePack<Arg>> {
+    using type = RealType;
+};
+
+template<typename Arg>
+    requires (IsNumericType<Arg>::value || IsSame<Arg, RealType>::value)
+struct TypeApply<PrimitiveType<Atan>, TypePack<Arg>> {
+    using type = RealType;
 };
 
 template<>
@@ -1468,6 +1842,16 @@ struct TypeApply<PrimitiveType<Length>, TypePack<StringType>> {
     using type = NatType;
 };
 
+template<typename Elem, std::size_t N>
+struct TypeApply<PrimitiveType<Length>, TypePack<VectorType<Elem, N>>> {
+    using type = NatType;
+};
+
+template<typename Elem, std::size_t Rows, std::size_t Cols>
+struct TypeApply<PrimitiveType<Length>, TypePack<MatrixType<Elem, Rows, Cols>>> {
+    using type = NatType;
+};
+
 template<typename ElemType>
 struct TypeApply<PrimitiveType<SetInsert>, TypePack<SetType<ElemType>, ElemType>> {
     using type = SetType<ElemType>;
@@ -1526,6 +1910,238 @@ struct TypeApply<PrimitiveType<MapErase>, TypePack<MapType<KeyType, ValueType>, 
 template<typename KeyType, typename ValueType>
 struct TypeApply<PrimitiveType<MapSize>, TypePack<MapType<KeyType, ValueType>>> {
     using type = NatType;
+};
+
+template<typename... ArgTypes>
+struct TypeApply<PrimitiveType<VectorCtor>, TypePack<ArgTypes...>> {
+private:
+    using elem_type = CommonValueType_t<ArgTypes...>;
+
+public:
+    using type = IfType_t<
+        IsTypeError<elem_type>::value,
+        elem_type,
+        VectorType<elem_type, sizeof...(ArgTypes)>
+    >;
+};
+
+template<typename... RowTypes>
+struct TypeApply<PrimitiveType<MatrixCtor>, TypePack<RowTypes...>> {
+    using type = typename CommonMatrixType<RowTypes...>::type;
+};
+
+template<typename Real, typename Imag>
+    requires (IsNumericType<Real>::value && IsNumericType<Imag>::value)
+struct TypeApply<PrimitiveType<ComplexCtor>, TypePack<Real, Imag>> {
+    using type = ComplexType<AdditiveNumericType_t<Real, Imag>>;
+};
+
+template<typename Elem, std::size_t N>
+struct TypeApply<PrimitiveType<VecAdd>, TypePack<VectorType<Elem, N>, VectorType<Elem, N>>> {
+    using type = VectorType<Elem, N>;
+};
+
+template<typename Left, typename Right, std::size_t N>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<VecAdd>, TypePack<VectorType<Left, N>, VectorType<Right, N>>> {
+    using type = VectorType<AdditiveNumericType_t<Left, Right>, N>;
+};
+
+template<typename Elem, std::size_t N>
+struct TypeApply<PrimitiveType<VecSub>, TypePack<VectorType<Elem, N>, VectorType<Elem, N>>> {
+    using type = VectorType<Elem, N>;
+};
+
+template<typename Left, typename Right, std::size_t N>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<VecSub>, TypePack<VectorType<Left, N>, VectorType<Right, N>>> {
+    using type = VectorType<AdditiveNumericType_t<Left, Right>, N>;
+};
+
+template<typename Elem, typename Scalar, std::size_t N>
+    requires (IsNumericType<Elem>::value && IsNumericType<Scalar>::value)
+struct TypeApply<PrimitiveType<VecScale>, TypePack<VectorType<Elem, N>, Scalar>> {
+    using type = VectorType<AdditiveNumericType_t<Elem, Scalar>, N>;
+};
+
+template<typename Left, typename Right, std::size_t N>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Dot>, TypePack<VectorType<Left, N>, VectorType<Right, N>>> {
+    using type = AdditiveNumericType_t<Left, Right>;
+};
+
+template<typename Elem, std::size_t N>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<Norm>, TypePack<VectorType<Elem, N>>> {
+    using type = RealType;
+};
+
+template<typename Elem, std::size_t N>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<NormalizeVector>, TypePack<VectorType<Elem, N>>> {
+    using type = VectorType<RealType, N>;
+};
+
+template<typename Elem, std::size_t Rows, std::size_t Cols>
+struct TypeApply<PrimitiveType<MatAdd>, TypePack<MatrixType<Elem, Rows, Cols>, MatrixType<Elem, Rows, Cols>>> {
+    using type = MatrixType<Elem, Rows, Cols>;
+};
+
+template<typename Left, typename Right, std::size_t Rows, std::size_t Cols>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<MatAdd>, TypePack<MatrixType<Left, Rows, Cols>, MatrixType<Right, Rows, Cols>>> {
+    using type = MatrixType<AdditiveNumericType_t<Left, Right>, Rows, Cols>;
+};
+
+template<typename Elem, std::size_t Rows, std::size_t Cols>
+struct TypeApply<PrimitiveType<MatSub>, TypePack<MatrixType<Elem, Rows, Cols>, MatrixType<Elem, Rows, Cols>>> {
+    using type = MatrixType<Elem, Rows, Cols>;
+};
+
+template<typename Left, typename Right, std::size_t Rows, std::size_t Cols>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<MatSub>, TypePack<MatrixType<Left, Rows, Cols>, MatrixType<Right, Rows, Cols>>> {
+    using type = MatrixType<AdditiveNumericType_t<Left, Right>, Rows, Cols>;
+};
+
+template<typename Elem, typename Scalar, std::size_t Rows, std::size_t Cols>
+    requires (IsNumericType<Elem>::value && IsNumericType<Scalar>::value)
+struct TypeApply<PrimitiveType<MatScale>, TypePack<MatrixType<Elem, Rows, Cols>, Scalar>> {
+    using type = MatrixType<AdditiveNumericType_t<Elem, Scalar>, Rows, Cols>;
+};
+
+template<typename Left, typename Right, std::size_t Rows, std::size_t Cols>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<MatVecMul>, TypePack<MatrixType<Left, Rows, Cols>, VectorType<Right, Cols>>> {
+    using type = VectorType<AdditiveNumericType_t<Left, Right>, Rows>;
+};
+
+template<typename Left, typename Right, std::size_t Rows, std::size_t Inner, std::size_t Cols>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<MatMul>, TypePack<MatrixType<Left, Rows, Inner>, MatrixType<Right, Inner, Cols>>> {
+    using type = MatrixType<AdditiveNumericType_t<Left, Right>, Rows, Cols>;
+};
+
+template<typename Elem, std::size_t Rows, std::size_t Cols>
+struct TypeApply<PrimitiveType<Transpose>, TypePack<MatrixType<Elem, Rows, Cols>>> {
+    using type = MatrixType<Elem, Cols, Rows>;
+};
+
+template<typename Elem, std::size_t N>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<Determinant>, TypePack<MatrixType<Elem, N, N>>> {
+    using type = Elem;
+};
+
+template<typename Elem, std::size_t N>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<Inverse>, TypePack<MatrixType<Elem, N, N>>> {
+    using type = MatrixType<MeanResultType_t<Elem>, N, N>;
+};
+
+template<typename Elem>
+struct TypeApply<PrimitiveType<Conjugate>, TypePack<ComplexType<Elem>>> {
+    using type = ComplexType<Elem>;
+};
+
+template<typename Left, typename Right>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Add>, TypePack<ComplexType<Left>, ComplexType<Right>>> {
+    using type = ComplexType<AdditiveNumericType_t<Left, Right>>;
+};
+
+template<typename Left, typename Right>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Sub>, TypePack<ComplexType<Left>, ComplexType<Right>>> {
+    using type = ComplexType<AdditiveNumericType_t<Left, Right>>;
+};
+
+template<typename Left, typename Right>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Mul>, TypePack<ComplexType<Left>, ComplexType<Right>>> {
+    using type = ComplexType<AdditiveNumericType_t<Left, Right>>;
+};
+
+template<typename Left, typename Right>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Div>, TypePack<ComplexType<Left>, ComplexType<Right>>> {
+    using type = ComplexType<AdditiveNumericType_t<Left, Right>>;
+};
+
+template<typename Elem>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<NormSquared>, TypePack<ComplexType<Elem>>> {
+    using type = Elem;
+};
+
+template<typename Elem>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<Magnitude>, TypePack<ComplexType<Elem>>> {
+    using type = RealType;
+};
+
+template<typename Elem>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<Argument>, TypePack<ComplexType<Elem>>> {
+    using type = RealType;
+};
+
+template<typename Elem, std::size_t N>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<Mean>, TypePack<VectorType<Elem, N>>> {
+    using type = MeanResultType_t<Elem>;
+};
+
+template<typename Elem, std::size_t N>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<Median>, TypePack<VectorType<Elem, N>>> {
+    using type = MeanResultType_t<Elem>;
+};
+
+template<typename Elem, std::size_t N>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<Mode>, TypePack<VectorType<Elem, N>>> {
+    using type = Elem;
+};
+
+template<typename Elem, std::size_t N>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<Variance>, TypePack<VectorType<Elem, N>>> {
+    using type = MeanResultType_t<Elem>;
+};
+
+template<typename Elem, std::size_t N>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<StdDev>, TypePack<VectorType<Elem, N>>> {
+    using type = RealType;
+};
+
+template<typename Elem, std::size_t N>
+struct TypeApply<PrimitiveType<Minimum>, TypePack<VectorType<Elem, N>>> {
+    using type = Elem;
+};
+
+template<typename Elem, std::size_t N>
+struct TypeApply<PrimitiveType<Maximum>, TypePack<VectorType<Elem, N>>> {
+    using type = Elem;
+};
+
+template<typename Elem, std::size_t N>
+    requires (IsNumericType<Elem>::value)
+struct TypeApply<PrimitiveType<StatRange>, TypePack<VectorType<Elem, N>>> {
+    using type = Elem;
+};
+
+template<typename Left, typename Right, std::size_t N>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Covariance>, TypePack<VectorType<Left, N>, VectorType<Right, N>>> {
+    using type = MeanResultType_t<AdditiveNumericType_t<Left, Right>>;
+};
+
+template<typename Left, typename Right, std::size_t N>
+    requires (IsNumericType<Left>::value && IsNumericType<Right>::value)
+struct TypeApply<PrimitiveType<Correlation>, TypePack<VectorType<Left, N>, VectorType<Right, N>>> {
+    using type = RealType;
 };
 
 template<>
